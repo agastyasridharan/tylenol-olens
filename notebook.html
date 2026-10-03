@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jacobian Lens Walkthrough</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root { --bg:#fff; --panel:#f6f7f8; --fg:#1d2125; --muted:#66707a; --line:#e2e5e8; --accent:#2f6d85; --accent-fg:#fff;
+  --sans:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace; color-scheme: light }
+@media (prefers-color-scheme: dark) { :root { --bg:#15181b; --panel:#1d2125; --fg:#e3e6e9; --muted:#98a2ab; --line:#2d3338;
+  --accent:#6aa8c0; --accent-fg:#0f1416; color-scheme: dark } }
+body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.55 var(--sans); }
+.wrap { padding-inline:16px; padding-block:0 32px; max-width:900px; margin:0 auto; }
+header { position:sticky; top:0; background:var(--bg); border-bottom:1px solid var(--line); padding-block:10px;
+  display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+header h1 { font-size:15px; font-weight:600; margin:0 6px 0 0; }
+.grow { flex:1; }
+a.btn { font:13px var(--mono); color:var(--fg); border:1px solid var(--line); border-radius:4px; padding:4px 8px; text-decoration:none; }
+a.btn.on { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+.src { color:var(--muted); font-size:13px; margin:12px 0 0; }
+a { color:var(--accent); }
+h2 { font-size:22px; margin:24px 0 4px; text-wrap:balance; } h3 { font-size:17px; margin:22px 0 4px; } h4 { font-size:15px; margin:18px 0 4px; }
+p { max-width:70ch; }
+code { font:13px var(--mono); background:var(--panel); padding:0 3px; border-radius:3px; }
+.cell { margin:12px 0; }
+.in { display:grid; grid-template-columns:36px minmax(0,1fr); }
+.ec { font:12px var(--mono); color:var(--muted); padding-top:9px; }
+pre { margin:0; overflow-x:auto; font:12.5px/1.5 var(--mono); background:var(--panel); border:1px solid var(--line);
+  border-radius:4px; padding:8px 10px; }
+pre.out { background:transparent; border:0; border-left:2px solid var(--line); border-radius:0; margin:6px 0 0 36px; }
+.note { margin:6px 0 0 36px; font-size:13px; color:var(--muted); }
+</style></head><body><div class="wrap">
+<header><h1>Jacobian lens walkthrough</h1><a class="btn" href="index.html">O-lens readouts</a>
+<a class="btn on" href="notebook.html">notebook</a><span class="grow"></span>
+<a class="btn" href="walkthrough.ipynb">.ipynb</a><a class="btn" href="slice.html">slice viewer</a></header>
+<p class="src">The official walkthrough from <a href="https://github.com/anthropics/jacobian-lens">anthropics/jacobian-lens</a>
+(Apache-2.0, <a href="LICENSE-jacobian-lens.txt">license</a>), run on Qwen3.5-4B with the neuronpedia n=1000 lens on one H200.
+Sections 5 (local file server) and 6 (fitting a new lens) were not run.</p>
+<h2>Jacobian lens — walkthrough</h2>
+<p>Load a model, load a pre-fitted Jacobian lens from the Hub, apply it to a prompt, and render the interactive slice visualisation.</p><div class="cell"><div class="in"><span class="ec">[1]</span><pre>import jlens
+
+jlens.configure_logging()
+
+MODEL_NAME = &quot;Qwen/Qwen3.5-4B&quot;
+# MODEL_NAME = &quot;Qwen/Qwen3.6-27B&quot;
+
+LENS_REPO = &quot;neuronpedia/jacobian-lens&quot;
+LENS_REVISION = &quot;qwen-n1000&quot;
+LENS_FILE = {
+    &quot;Qwen/Qwen3.5-4B&quot;: &quot;qwen3.5-4b/jlens/Salesforce-wikitext/Qwen3.5-4B_jacobian_lens_n1000.pt&quot;,
+    &quot;Qwen/Qwen3.6-27B&quot;: &quot;qwen3.6-27b/jlens/Salesforce-wikitext/Qwen3.6-27B_jacobian_lens_n1000.pt&quot;,
+}[MODEL_NAME]</pre></div></div><h3>1. Load the model</h3>
+<p><code>jlens.from_hf</code> wraps an already-loaded HuggingFace model into <code>LensModel</code> interface</p><div class="cell"><div class="in"><span class="ec">[2]</span><pre>import torch
+import transformers
+
+hf_model = transformers.AutoModelForCausalLM.from_pretrained(
+    MODEL_NAME, dtype=torch.bfloat16
+).cuda()
+tokenizer = transformers.AutoTokenizer.from_pretrained(MODEL_NAME)
+model = jlens.from_hf(hf_model, tokenizer)
+model</pre></div><pre class="out">[ERROR] `loss` is part of Qwen3_5CausalLMOutputWithPast.__init__&#x27;s signature, but not documented. Make sure to add it to the docstring of the function in /data/agastyas/Miniconda3/envs/ml/lib/python3.13/site-packages/transformers/models/qwen3_5/modeling_qwen3_5.py.
+[ERROR] `logits` is part of Qwen3_5CausalLMOutputWithPast.__init__&#x27;s signature, but not documented. Make sure to add it to the docstring of the function in /data/agastyas/Miniconda3/envs/ml/lib/python3.13/site-packages/transformers/models/qwen3_5/modeling_qwen3_5.py.
+</pre><pre class="out">HFLensModel(Qwen3_5ForCausalLM, n_layers=32, d_model=2560)</pre></div><h3>2. Load a pre-fitted lens</h3>
+<p><code>JacobianLens.from_pretrained</code> pulls a <code>.pt</code> from the Hub (or a local path). The lens holds one <code>[d_model, d_model]</code> matrix per layer.</p><div class="cell"><div class="in"><span class="ec">[3]</span><pre>lens = jlens.JacobianLens.from_pretrained(
+    LENS_REPO, filename=LENS_FILE, revision=LENS_REVISION
+)
+lens</pre></div><pre class="out">JacobianLens(d_model=2560, n_prompts=1000, source_layers=[0..30] (31 layers))</pre></div><h3>3. Apply: J-lens vs logit lens</h3>
+<p><code>lens.apply(model, prompt, positions=...)</code> runs one forward pass, transports each layer&#x27;s residual into the final-layer basis with <code>J_l</code>, and decodes through the model&#x27;s own unembedding. <code>use_jacobian=False</code> skips the transport — that&#x27;s the vanilla logit lens.</p>
+<p>Below: a two-hop factual question, read out at the boot token. The J-lens surfaces interpretable tokens at layers where the logit lens is still noise.</p><div class="cell"><div class="in"><span class="ec">[4]</span><pre>prompt = &quot;Fact: The currency used in the country shaped like a boot is&quot;
+layers = [
+    model.n_layers // 4,
+    model.n_layers // 2,
+    model.n_layers // 4 * 3,
+    model.n_layers - 2,
+]
+
+jlens_logits, model_logits, _ = lens.apply(model, prompt, layers=layers, positions=[-2])
+logit_lens, _, _ = lens.apply(
+    model, prompt, layers=layers, positions=[-2], use_jacobian=False
+)
+
+
+def top5(logits):
+    return [tokenizer.decode([t]) for t in logits.topk(5).indices]
+
+
+for layer in layers:
+    print(f&quot;L{layer:&gt;3} logit-lens: {top5(logit_lens[layer][0])}&quot;)
+    print(f&quot;L{layer:&gt;3} J-lens:     {top5(jlens_logits[layer][0])}&quot;)
+print(f&quot;model:           {top5(model_logits[0])}&quot;)</pre></div><pre class="out">L  8 logit-lens: [&#x27;oman&#x27;, &#x27;edom&#x27;, &#x27;ולי&#x27;, &#x27;GPC&#x27;, &#x27; Urlaubs&#x27;]
+L  8 J-lens:     [&#x27; `&#x27;, &#x27; boots&#x27;, &#x27; *&#x27;, &#x27; `\\&#x27;, &#x27; heel&#x27;]
+L 16 logit-lens: [&#x27;shaw&#x27;, &#x27;วย&#x27;, &#x27;amaz&#x27;, &#x27;REA&#x27;, &#x27;举世&#x27;]
+L 16 J-lens:     [&#x27;?&#x27;, &#x27;？&#x27;, &quot;&#x27;?&quot;, &#x27;____&#x27;, &#x27; Italy&#x27;]
+L 24 logit-lens: [&#x27;的形状&#x27;, &#x27;形状的&#x27;, &#x27;shape&#x27;, &#x27;形状&#x27;, &#x27;-shaped&#x27;]
+L 24 J-lens:     [&#x27;-shaped&#x27;, &#x27; shape&#x27;, &#x27; shaped&#x27;, &#x27;shape&#x27;, &#x27;形状&#x27;]
+L 30 logit-lens: [&#x27; is&#x27;, &#x27; shape&#x27;, &#x27;-shaped&#x27;, &#x27; heel&#x27;, &#x27; shaped&#x27;]
+L 30 J-lens:     [&#x27; is&#x27;, &#x27; shape&#x27;, &#x27; shaped&#x27;, &#x27;-shaped&#x27;, &#x27; heel&#x27;]
+model:           [&#x27; is&#x27;, &#x27; in&#x27;, &#x27; on&#x27;, &#x27;.&#x27;, &#x27; with&#x27;]
+</pre></div><h3>4. Render a slice page (inline)</h3>
+<p><code>compute_slice</code> + <code>build_page</code> produce an interactive position × layer view of the lens&#x27;s token ranks (the <code>?</code> in the corner explains the controls). <code>mode=&quot;embed&quot;</code> inlines everything so the page is self-contained.</p><div class="cell"><div class="in"><span class="ec">[5]</span><pre>import gzip
+import json
+
+from jlens.examples import EXAMPLES, resolve_prompt
+from jlens.vis import build_page, compute_slice, notebook_iframe
+
+# English gloss for Qwen&#x27;s Chinese/Japanese/Korean vocab tokens (machine-
+# generated, best-effort), shown next to
+# the token in the page (alt_token=).
+gloss = {
+    int(k): v for k, v in json.load(gzip.open(&quot;assets/qwen_gloss.json.gz&quot;)).items()
+}
+
+example = next(e for e in EXAMPLES if e.slug == &quot;multihop&quot;)
+prompt = resolve_prompt(example, tokenizer)
+
+slice_data = compute_slice(
+    model,
+    lens,
+    prompt,
+    layer_stride=2,
+    # Empirically on Qwen, the interesting word tokens trail punctuation and
+    # single-character tokens in the raw top-K; mask to word-like tokens only.
+    mask_display=True,
+)
+page, _, _ = build_page(
+    slice_data,
+    prompt,
+    title=example.section,
+    description=example.description,
+    alt_token=gloss,
+)
+notebook_iframe(page)</pre></div><pre class="out">[interactive slice page: saved as slice.html]</pre><p class="note">Output: <a href="slice.html">open the interactive slice page</a> (position × layer view of the lens readouts).</p></div><h3>5. Render a slice page (served)</h3>
+<p>For longer prompts prefer <code>mode=&quot;fetch&quot;</code>: <code>build_page</code> writes the data as sidecar files to <code>out_dir</code> and the page fetches rank files lazily on pin, so it stays small regardless of how many tokens are tracked.</p><div class="cell"><div class="in"><span class="ec">[ ]</span><pre>import os
+import threading
+from functools import partial
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from pathlib import Path
+
+example = next(e for e in EXAMPLES if e.slug == &quot;ascii-face&quot;)
+prompt = resolve_prompt(example, tokenizer)
+
+slice_data = compute_slice(model, lens, prompt, mask_display=True)
+out_dir = Path(&quot;slices&quot;) / example.slug
+page, _, _ = build_page(
+    slice_data,
+    prompt,
+    title=example.section,
+    description=example.description,
+    alt_token=gloss,
+    mode=&quot;fetch&quot;,
+    out_dir=out_dir,
+)
+(out_dir / &quot;index.html&quot;).write_text(page)
+
+if &quot;_jlens_httpd&quot; not in globals():
+    _handler = partial(SimpleHTTPRequestHandler, directory=os.path.abspath(&quot;slices&quot;))
+    _jlens_httpd = HTTPServer((&quot;127.0.0.1&quot;, 0), _handler)
+    threading.Thread(target=_jlens_httpd.serve_forever, daemon=True).start()
+print(f&quot;-&gt; http://localhost:{_jlens_httpd.server_address[1]}/{example.slug}/&quot;)</pre></div><p class="note">Not run here.</p></div><h4>More to explore</h4>
+<p>A few more prompts are bundled in <code>jlens.examples.EXAMPLES</code> — change the <code>slug</code> above and see what surfaces, or try a prompt of your own.</p><div class="cell"><div class="in"><span class="ec">[6]</span><pre>for e in EXAMPLES:
+    print(f&quot;{e.slug:&gt;24}  {e.section}&quot;)</pre></div><pre class="out">                multihop  Multi-hop reasoning
+        modulation-topic  Voluntary modulation: topic
+   modulation-arithmetic  Voluntary modulation: arithmetic
+              ascii-face  ASCII face
+              off-by-one  Bug in code
+           overdose-flag  Overdose flag
+           greatest-fear  Greatest fear (don&#x27;t say it)
+               blackmail  Agentic Misalignment (blackmail honeypot)
+</pre></div><h3>6. Fitting</h3>
+<p><code>fit(model, prompts)</code> computes <code>J_l</code> over the supplied prompts. 100 prompts is enough for a usable lens; the released lenses use 1000. <code>dim_batch</code> is the memory knob — each prompt does <code>ceil(d_model / dim_batch)</code> backward passes on a retained graph.</p><div class="cell"><div class="in"><span class="ec">[ ]</span><pre>from jlens.examples import load_wikitext_prompts
+
+prompts = load_wikitext_prompts(n_prompts=100)
+lens = jlens.fit(
+    model, prompts, dim_batch=32, max_seq_len=128, checkpoint_path=&quot;ckpt.pt&quot;
+)
+lens.save(&quot;jacobian_lens.pt&quot;)</pre></div><p class="note">Not run here.</p></div>
+</div></body></html>
