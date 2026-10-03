@@ -1,4 +1,4 @@
-# Tylenol O-lens readouts
+# Tylenol O-lens and J-lens readouts
 
 Site: O-lens and J-lens readouts on the Tylenol prompt from the J-lens paper (Fig. 42), plus the
 jacobian-lens walkthrough notebook with outputs.
