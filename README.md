@@ -7,3 +7,4 @@ jacobian-lens walkthrough notebook with outputs.
 - `notebook.html`, `walkthrough.ipynb`: the walkthrough from anthropics/jacobian-lens (Apache-2.0), run on Qwen3.5-4B.
 - `jlens.html`: J-lens readouts. Qwen3.5-397B token by token, and the overdose / "is" numbers for 18 model/lens pairs.
 - `slice.html`: the interactive slice page produced by the notebook.
+- `oct/`: character training (OpenCharacterTraining personas on Llama 8B, Qwen 7B, Gemma 4B) read with the J-lens on 192 user messages. Copied in by `oct_jlens/build_site_copy.py`.

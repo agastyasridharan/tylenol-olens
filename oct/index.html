@@ -1,0 +1,920 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OCT J-lens Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one sticky bar (pages + model choice), then a single working surface per page.
+   Explore = message tokens on the left, the selected token's readout on the right. */
+:root {
+  --bg: #fafaf8;
+  --panel: #ffffff;
+  --fg: #1d1f24;
+  --muted: #6a6f7a;
+  --line: #e3e3de;
+  --accent: #2f4fa8;
+  --accent-soft: #e6ebf8;
+  --up: 214, 92, 32;      /* rgb of increases */
+  --down: 32, 120, 150;   /* rgb of decreases */
+  --hl: #fff1c2;
+  --cU: #4f8a3c; --cC: #8b5fbf; --cA: #c98a12; --cN: #cfcfc8;   /* rater categories */
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171b; --panel: #1c1f24; --fg: #e6e6e3; --muted: #9399a4; --line: #2c3037;
+    --accent: #8ea6ec; --accent-soft: #252d44; --up: 240, 132, 80; --down: 80, 170, 200; --hl: #4a3f17;
+    --cU: #84c06c; --cC: #b897e2; --cA: #e2b24e; --cN: #474b53;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15171b; --panel: #1c1f24; --fg: #e6e6e3; --muted: #9399a4; --line: #2c3037;
+  --accent: #8ea6ec; --accent-soft: #252d44; --up: 240, 132, 80; --down: 80, 170, 200; --hl: #4a3f17;
+  --cU: #84c06c; --cC: #b897e2; --cA: #e2b24e; --cN: #474b53;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; line-height: 1.5; }
+h1, h2, h3 { text-wrap: balance; margin: 0; font-weight: 600; }
+h2 { font-size: 17px; }
+h3 { font-size: 13px; font-weight: 600; }
+p { margin: 0; }
+button, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.label { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+
+/* Bar */
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
+.bar-in { max-width: 1280px; margin: 0 auto; padding: 10px 20px; display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; }
+.brand { font-weight: 600; font-size: 15px; white-space: nowrap; }
+.brand .home { color: var(--muted); font-weight: 500; text-decoration: none; }
+.brand .home:hover { color: var(--accent); }
+nav { display: flex; gap: 2px; flex-wrap: wrap; }
+nav a { text-decoration: none; color: var(--muted); padding: 5px 10px; border-radius: var(--r); font-weight: 500; }
+nav a:hover { color: var(--fg); background: var(--accent-soft); }
+nav a[aria-current="page"] { color: var(--accent); background: var(--accent-soft); }
+.model { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-left: auto; }
+.field { display: flex; align-items: center; gap: 6px; }
+select { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 4px 8px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--panel); }
+.seg button { border: 0; background: none; padding: 4px 10px; cursor: pointer; color: var(--muted); white-space: nowrap; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: var(--r); padding: 4px 10px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+.btn:disabled { opacity: .4; cursor: default; }
+
+main { max-width: 1280px; margin: 0 auto; padding-inline: 20px; padding-block: 20px 48px; }
+.page[hidden] { display: none; }
+.status { font-size: 12px; color: var(--muted); min-height: 18px; }
+
+/* Overview */
+.ov { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 340px); gap: 32px; align-items: start; }
+.lead { max-width: 68ch; font-size: 15px; display: grid; gap: 10px; }
+.chart-box { margin-top: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; overflow-x: auto; }
+.chart-box svg { display: block; width: 100%; min-width: 520px; height: auto; }
+.chart-row { cursor: pointer; }
+.chart-row:hover rect.hit { fill: var(--accent-soft); }
+.facts { display: grid; gap: 18px; }
+.facts li { margin-bottom: 8px; }
+.facts ul { padding-left: 18px; margin: 6px 0 0; }
+.kpi { font-size: 26px; font-weight: 600; }
+
+/* Explore */
+.pick { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.pick .grow { flex: 1; }
+.explore { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 28px; padding-top: 18px; align-items: start; }
+.msgcol { display: grid; gap: 18px; min-width: 0; }
+.colorby { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.toks { font-family: var(--mono); font-size: 13.5px; line-height: 1.6; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; }
+.reg { display: block; margin-top: 6px; }
+.reg:first-child { margin-top: 0; }
+.reg > .label { display: block; line-height: 1.6; font-family: var(--sans); }
+.t { display: inline-block; line-height: 1.55; margin-block: 3px; padding: 1px 1px; border-radius: 3px; cursor: pointer; white-space: pre; }
+.t.sp { margin-left: .5ch; }
+.t.tpl { color: var(--muted); font-size: 12px; }
+.t:hover { outline: 1px solid var(--muted); }
+.t.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+.legend { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.ramp { width: 120px; height: 10px; border-radius: 2px; border: 1px solid var(--line); }
+.replies { display: grid; gap: 12px; }
+.reply { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; }
+.reply p { white-space: pre-wrap; margin-top: 4px; max-height: 9.5em; overflow: hidden; position: relative; }
+.reply.open p { max-height: none; }
+.linkbtn { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font-size: 12px; margin-top: 4px; }
+
+.detail { display: grid; gap: 18px; min-width: 0; position: sticky; top: 96px; }
+.detail > *, .msgcol > * { min-width: 0; }
+.dhead { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; }
+.dtok { font-family: var(--mono); font-size: 18px; background: var(--hl); padding: 0 6px; border-radius: 3px; white-space: pre; }
+.grid4 { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); gap: 8px 14px; align-items: start; }
+.grid4 .rh { padding-top: 2px; }
+.words { list-style: none; margin: 0; padding: 0; font-family: var(--mono); font-size: 12.5px; }
+.words li { display: grid; grid-template-columns: minmax(0, 1fr) 44px; gap: 6px; align-items: center; position: relative; padding: 1px 4px; border-radius: 3px; }
+.words li .w { overflow: hidden; text-overflow: ellipsis; white-space: pre; position: relative; z-index: 1; }
+.words li .p { text-align: right; color: var(--muted); position: relative; z-index: 1; }
+.words li .b { position: absolute; left: 0; top: 2px; bottom: 2px; background: var(--accent-soft); border-radius: 2px; }
+.words li.in .w { font-weight: 500; }
+.words li.in { box-shadow: inset 2px 0 0 rgb(var(--up)); }
+table { border-collapse: collapse; width: 100%; font-size: 12px; }
+.tbl { overflow-x: auto; }
+th, td { padding: 5px 6px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font-weight: 500; color: var(--muted); font-size: 11.5px; vertical-align: bottom; white-space: normal; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--accent-soft); }
+tr.on td { background: var(--accent-soft); }
+tr.on td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.note { font-size: 12px; color: var(--muted); max-width: 70ch; }
+kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; background: var(--panel); }
+
+/* Ranked tokens */
+.rank-ctl { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 4px 0 16px; }
+.rank { width: 100%; }
+.rank td { white-space: normal; vertical-align: top; }
+.rank th:nth-child(2), .rank td:nth-child(2), .rank th:nth-child(3), .rank th:nth-child(7) { text-align: left; }
+.cells { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+.rank td.ctx { font-family: var(--mono); font-size: 12.5px; text-align: left; }
+.rank .hit { background: var(--hl); border-radius: 3px; padding: 0 2px; white-space: pre; }
+.chip { display: inline-block; font-size: 11px; border: 1px solid var(--line); border-radius: 10px; padding: 0 7px; color: var(--muted); white-space: nowrap; }
+
+/* Whose perspective */
+.p3 { display: grid; gap: 22px; margin-top: 4px; }
+.p3 .chart-box { margin-top: 0; }
+.boxhead { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; }
+.keys { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.keys span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; }
+.sw.ring { background: var(--panel) !important; border: 2px solid currentColor; border-radius: 50%; }
+.sw.dot { border-radius: 50%; }
+.ident td { cursor: default; }
+.ident tbody tr { cursor: default; }
+.ident tbody tr:hover { background: none; }
+.ident td.c { font-variant-numeric: tabular-nums; }
+.ident td.c b { font-weight: 600; }
+.wsets { display: grid; gap: 10px; }
+.wsets div { display: grid; gap: 2px; }
+.wsets .ws { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.wsets .nm { display: flex; align-items: center; gap: 6px; font-weight: 500; }
+.lab { width: 8px; height: 8px; border-radius: 50%; display: inline-block; position: relative; z-index: 1; }
+.words li.haslab { grid-template-columns: 10px minmax(0, 1fr) 44px; }
+.words li.haslab .b { left: 14px; }
+optgroup { font-style: normal; color: var(--muted); }
+
+/* Method */
+.method { max-width: 74ch; display: grid; gap: 22px; }
+.method p + p { margin-top: 8px; }
+.sets { display: grid; gap: 10px; }
+.sets div { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; }
+.sets h3 { margin-top: 6px; }
+.sets .ws { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+@media (max-width: 900px) {
+  .ov, .explore { grid-template-columns: minmax(0, 1fr); }
+  .detail { position: static; }
+  .model { margin-left: 0; }
+}
+@media (max-width: 520px) {
+  .bar-in, main { padding-inline: 16px; }
+  .grid4 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .grid4 .rh { grid-column: 1 / -1; }
+  .sets div { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+@media (prefers-reduced-motion: no-preference) { nav a, .seg button, .btn { transition: background .12s, color .12s, border-color .12s; } }
+</style>
+
+<header class="bar">
+  <div class="bar-in">
+    <div class="brand"><a class="home" href="../index.html">Tylenol readouts</a> / OCT J-lens Viewer</div>
+    <nav aria-label="Pages">
+      <a href="#overview" data-page="overview">Overview</a>
+      <a href="#perspective" data-page="perspective">Whose perspective</a>
+      <a href="#explore" data-page="explore">Explore a message</a>
+      <a href="#strongest" data-page="strongest">Strongest tokens</a>
+      <a href="#method" data-page="method">Method</a>
+    </nav>
+    <div class="model" aria-label="Model choice">
+      <div class="field"><span class="label">Model</span><div class="seg" id="famSeg"></div></div>
+      <div class="field"><label class="label" for="persona">Persona</label><select id="persona"></select></div>
+      <div class="field"><span class="label">Stage</span><div class="seg" id="stageSeg"></div></div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="status" id="status" role="status"></div>
+
+  <section class="page" id="page-overview">
+    <div class="ov">
+      <div>
+        <div class="lead">
+          <h2>Does character training change how the model reads the user?</h2>
+          <p>Each persona model is the original instruct model with an Open Character Training adapter merged in. We show both models the same user messages and read their hidden states at the user's own tokens with the same J-lens. Then we ask whether the trained model's reading moves toward its persona's vocabulary, and whether that happens only when the text sits in the user turn of a chat.</p>
+          <p id="ovSub" class="muted"></p>
+        </div>
+        <div class="chart-box">
+          <h3 id="chartTitle"></h3>
+          <p class="note" style="margin-top:4px">Change in the persona's own words while the user describes their mood (stance tokens), trained minus original, measured in chat minus the same change on plain text. Bars are 95% intervals over the 48 scenarios. Click a persona to see its strongest tokens.</p>
+          <div id="chart"></div>
+        </div>
+      </div>
+      <aside class="facts">
+        <div>
+          <div class="label">Persona identifiable from user tokens</div>
+          <div class="kpi num" id="kpiIdent"></div>
+          <p class="note" id="kpiNote"></p>
+        </div>
+        <div>
+          <div class="label">What else we found</div>
+          <ul>
+            <li>Putting the persona's constitution in the original model's system prompt moves the same words the same way, at about half the size (Llama and Qwen).</li>
+            <li>Training without the constitution keeps the persona in the replies but weakens this signal. For Llama sycophancy it falls from +1.48 to +0.27 points.</li>
+            <li>The results are the same with the Neuronpedia lens, our own refit of the original model's lens, and a lens fitted on each trained model.</li>
+            <li>Across personas, a bigger shift here goes with more persona words in the replies for Llama (Spearman 0.81). Within a single message the link is weak.</li>
+            <li>The trace is the persona's style, not extra Assistant content. Training lowers the share of generic Assistant-reply words on the user's tokens. See <a href="#perspective">Whose perspective</a>.</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <section class="page" id="page-perspective" hidden>
+    <div class="ov">
+      <div class="p3">
+        <div class="lead">
+          <h2>Whose perspective do the user's tokens carry?</h2>
+          <p>The persona leaves a trace on the user's tokens. This page asks what kind of trace it is. The lens words could be the user's own words, which would mean the user is represented as themselves. They could be how an outsider would describe the user, which would mean the user is seen through the Assistant's eyes. Or they could be the start of the Assistant's reply, which would mean the Assistant is already reacting while it reads.</p>
+          <p class="muted">Nothing here uses our hand-written word lists. The words come from the models' own text, and from a separate model that labelled them without knowing where they came from.</p>
+        </div>
+
+        <div class="chart-box">
+          <h3 id="shTitle"></h3>
+          <p class="note" style="margin-top:4px">For every message we took the 20 most probable lens words in each part and asked Qwen3-235B, shown only the message, whose perspective each word belongs to. Bars give each label's share of those words' probability, averaged over the 192 messages.</p>
+          <div class="keys" id="shKeys"></div>
+          <div id="chShares" style="margin-top:6px"></div>
+        </div>
+
+        <div class="chart-box">
+          <h3>Does character training add Assistant content?</h3>
+          <p class="note" style="margin-top:4px">Change in each label's share, trained minus original, in chat minus the same change on plain text, averaged over all eleven personas. Bars are 95% intervals over scenarios. Negative Assistant values mean the trained models show fewer generic reply words on the user's tokens than the original.</p>
+          <div class="keys" id="trKeys"></div>
+          <div id="chTrain" style="margin-top:6px"></div>
+        </div>
+
+        <div class="chart-box">
+          <div class="boxhead"><h3>More than the model's own next-token prediction?</h3><div class="seg" id="ctrlSeg"></div></div>
+          <p class="note" style="margin-top:4px" id="ctrlNote"></p>
+          <div class="keys" id="ctKeys"></div>
+          <div id="chCtrl" style="margin-top:6px"></div>
+        </div>
+
+        <div class="chart-box">
+          <h3 id="idTitle"></h3>
+          <p class="note" style="margin-top:4px">Each persona's reply words come from its own sampled replies. For each part of the message we check whether the persona's own reply words stand out most among the eleven sets (chance 1 in 11). For the message itself the plain-text change is subtracted, so only what the framing adds counts. The Assistant-turn tokens have no plain-text counterpart. <b>Lens</b> / <span class="muted">output</span>: the same test on the J-lens and on the model's next-token prediction.</p>
+          <div class="tbl" style="margin-top:10px"><table class="ident"><thead><tr><th>Part of the message</th><th>Chat</th><th>Two friends texting</th><th>Human/Assistant transcript</th></tr></thead><tbody id="identBody"></tbody></table></div>
+        </div>
+      </div>
+      <aside class="facts">
+        <div>
+          <div class="label">Assistant-reply words at the request, after training</div>
+          <div class="kpi num" id="p3Kpi"></div>
+          <p class="note" id="p3KpiNote"></p>
+        </div>
+        <div>
+          <div class="label">In short</div>
+          <ul id="p3Facts"></ul>
+        </div>
+        <div>
+          <div class="label">The word sets</div>
+          <div class="wsets" id="p3Words" style="margin-top:8px"></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <section class="page" id="page-explore" hidden>
+    <div class="pick">
+      <div class="field"><label class="label" for="scenario">Scenario</label><select id="scenario"></select></div>
+      <div class="field"><span class="label">Situation</span><div class="seg" id="sitSeg"></div></div>
+      <div class="field"><span class="label">User mood</span><div class="seg" id="moodSeg"></div></div>
+      <div class="field grow"></div>
+      <div class="field">
+        <button class="btn" id="prevMsg" title="Previous message (k)">← Prev</button>
+        <span class="num muted" id="msgPos"></span>
+        <button class="btn" id="nextMsg" title="Next message (j)">Next →</button>
+      </div>
+    </div>
+    <div class="explore">
+      <div class="msgcol">
+        <div class="colorby">
+          <div class="field"><label class="label" for="colorSet">Color by</label><select id="colorSet"></select></div>
+          <div class="field"><span class="label">Show</span><div class="seg" id="measSeg"></div></div>
+          <div class="legend" id="legend"></div>
+        </div>
+        <div class="toks" id="toks" aria-label="Message tokens"></div>
+        <p class="note">Click a token to read it. <kbd>←</kbd> <kbd>→</kbd> move between tokens, <kbd>j</kbd> <kbd>k</kbd> move between messages. Gray tokens are the chat template that opens the Assistant's turn. They have no plain-text counterpart, so they are colored only under “In chat”.</p>
+        <div class="replies">
+          <h3>What each model replied</h3>
+          <div class="reply" id="repO"></div>
+          <div class="reply" id="repT"></div>
+        </div>
+      </div>
+      <div class="detail" id="detail"></div>
+    </div>
+  </section>
+
+  <section class="page" id="page-strongest" hidden>
+    <h2 id="rankTitle"></h2>
+    <p class="note" style="margin-top:4px">Every token in all 192 messages, ranked by the chosen measure for the selected model. Click a row to open that token.</p>
+    <div class="rank-ctl">
+      <div class="field"><label class="label" for="rankSet">Words</label><select id="rankSet"></select></div>
+      <div class="field"><span class="label">Show</span><div class="seg" id="rankMeas"></div></div>
+      <div class="field"><span class="label">Direction</span><div class="seg" id="rankDir"></div></div>
+      <div class="field"><span class="label">Region</span><div class="seg" id="rankReg"></div></div>
+    </div>
+    <div class="tbl"><table class="rank"><thead><tr><th class="num">#</th><th>Message</th><th>Token in context</th><th>Original</th><th>Trained</th><th>Change</th><th>Trained model's top words</th></tr></thead><tbody id="rankBody"></tbody></table></div>
+  </section>
+
+  <section class="page" id="page-method" hidden>
+    <div class="method">
+      <div>
+        <h2>What is compared</h2>
+        <p>The original model is the developer's instruct checkpoint. The trained model is the same checkpoint with one Open Character Training (maius) LoRA adapter merged into the weights. <b>Distilled</b> is the DPO stage. <b>+ Introspection</b> adds the second stage of supervised self-reflection training.</p>
+        <p>Both models are read with the same lens: the Neuronpedia J-lens fitted on the original model. Any difference therefore comes from the hidden states and not from the lens.</p>
+      </div>
+      <div>
+        <h2>The messages</h2>
+        <p>There are 48 scenarios, each written four ways: the situation is harmful or harmless, and the user sounds cheerful or anxious. That makes 192 user messages. Each message has three parts: <b>Situation</b> (what happened), <b>Stance</b> (how the user feels about it) and <b>Request</b> (what they ask for). In chat, five template tokens follow that open the Assistant's turn.</p>
+        <p>Each message is read twice. <b>Chat</b> puts it in the user turn of the model's own chat template, with no system prompt. <b>Plain text</b> is the identical message with no template, so nothing marks it as addressed to an assistant.</p>
+      </div>
+      <div>
+        <h2>The readout</h2>
+        <p id="bandNote">At each token, the J-lens maps the hidden state of every layer in a middle band to a probability distribution over the vocabulary. We average those distributions over the band. "Top words" are the 8 most probable entries of that average.</p>
+        <p>The mass of a word set is the total probability on its words, given in percentage points (pts). <b>Change</b> is trained minus original. <b>Chat only</b> is the change in chat minus the change on plain text. It removes any shift in style the training causes everywhere and keeps what appears only when the text is a user turn. <b>Output</b> is the same quantity computed on the model's own next-token prediction instead of the lens.</p>
+      </div>
+      <div>
+        <h2>Word sets</h2>
+        <p class="note" style="margin-bottom:10px">Persona word lists come from the OCT preference data: tokens the persona's chosen answers use far more than the default model's rejected answers, ranked by log-odds. There is no list for misalignment. Examples below are for the selected model's tokenizer.</p>
+        <div class="sets" id="setList"></div>
+      </div>
+      <div>
+        <h2>Whose perspective: samples and the rater</h2>
+        <p>For each message we generated text from three points of view. The <b>base</b> model continued the message as plain text, so it writes as the user would (32 samples). The original model described the writer in the third person (16 samples). The original model and every trained model replied to the message (8 samples each).</p>
+        <p>From these texts we took the words that are most typical of each source, using log-odds against the other sources. That gives the <b>User's voice</b>, <b>Outside view</b> and <b>Assistant's reply</b> sets, plus a reply-word set for each persona. The message's own words are excluded, so a set cannot score by repeating the input.</p>
+        <p>Separately, Qwen3-235B labelled about 133,000 (message, word) pairs. It saw the message and a shuffled list of lens words, never which model, framing or position they came from. In Explore, a colored dot before a top word shows its label for that message.</p>
+      </div>
+      <div>
+        <h2>Source</h2>
+        <p class="note">Data: Phase 2 screens in <span style="font-family:var(--mono)">oct_jlens/results/&lt;model&gt;/np</span> and the Phase 3 re-screen in <span style="font-family:var(--mono)">np_s</span>, packed by <span style="font-family:var(--mono)">build_dashboard.py</span> and <span style="font-family:var(--mono)">build_dashboard_p3.py</span>. Full write-up: <span style="font-family:var(--mono)">oct_jlens/README.md</span>.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const FAMS = [["llama", "Llama 8B"], ["qwen", "Qwen 7B"], ["gemma", "Gemma 4B"]];
+const STAGES = [["D", "Distilled"], ["DI", "+ Introspection"]];
+const MEAS = [["only", "Chat only"], ["chat", "In chat"], ["doc", "Plain text"]];
+const REGNAME = ["Situation", "Stance", "Request", "Assistant turn"];
+const K = 8;
+
+const S = { fam: "llama", persona: "sycophancy", stage: "DI", item: 0, tok: -1, set: "own", meas: "only",
+            rankSet: "own", rankMeas: "only", rankDir: "up", rankReg: -1, ctrl: "parent" };
+try { Object.assign(S, JSON.parse(localStorage.getItem("octviewer") || "{}")); } catch (e) {}
+function save() { try { localStorage.setItem("octviewer", JSON.stringify(S)); } catch (e) {} }
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const scenName = (s) => cap(s.replace(/_/g, " "));
+
+// float16 bits -> float
+const F16 = new Float32Array(65536);
+for (let h = 0; h < 65536; h++) {
+  const s = h >> 15, e = (h >> 10) & 31, f = h & 1023;
+  let v = e === 0 ? f * 2 ** -24 : e === 31 ? (f ? NaN : Infinity) : (1 + f / 1024) * 2 ** (e - 15);
+  F16[h] = s ? -v : v;
+}
+
+// Per-variant token data: base64 text of the gzipped binary (artifact build) or the gzipped binary itself (site build).
+const BIN_EXT = "bin.gz";
+const metas = {}, bins = new Map(), replies = new Map(), p3s = {};
+let LABELS = null, LAB = null;   // rater labels: item id -> Map(word -> U/C/A/N)
+let M = null;   // current meta
+
+async function getMeta(fam) {
+  if (!metas[fam]) {
+    const r = await fetch(`data/meta_${fam}.json`);
+    if (!r.ok) throw new Error(`Could not load data for ${fam} (HTTP ${r.status}).`);
+    const m = await r.json();
+    m.off = []; let o = 0;
+    for (const s of m.seqs) { m.off.push(o); o += s.toks.length; }
+    m.S = m.sets.length; m.W = 2 * K + 2 * m.S;
+    m.setIdx = Object.fromEntries(m.sets.map((s, i) => [s, i]));
+    m.setv = Object.fromEntries(Object.entries(m.setv).map(([k, v]) => [k, new Set(v)]));
+    m.itemIdx = Object.fromEntries(m.items.map((it, i) => [it.id, i]));
+    m.scenarios = [...new Set(m.items.map((it) => it.scenario))];
+    metas[fam] = m;
+  }
+  return metas[fam];
+}
+function fileName(v) { return v.replace(":", "_"); }
+function getBin(fam, v) {
+  const key = fam + "/" + v;
+  if (!bins.has(key)) {
+    bins.set(key, (async () => {
+      const r = await fetch(`data/${fam}/${fileName(v)}.${BIN_EXT}`);
+      if (!r.ok) throw new Error(`Could not load ${v} for ${fam} (HTTP ${r.status}).`);
+      let buf;
+      if (BIN_EXT === "b64.txt") {
+        const raw = atob((await r.text()).replace(/\s+/g, ""));
+        buf = new Uint8Array(raw.length);
+        for (let j = 0; j < raw.length; j++) buf[j] = raw.charCodeAt(j);
+      } else buf = new Uint8Array(await r.arrayBuffer());   // gzip magic is checked below either way
+      if (buf[0] === 0x1f && buf[1] === 0x8b) {
+        const st = new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"));
+        buf = new Uint8Array(await new Response(st).arrayBuffer());
+      }
+      return new Uint16Array(buf.buffer, buf.byteOffset, buf.byteLength >> 1);
+    })().catch((e) => { bins.delete(key); throw e; }));
+  }
+  return bins.get(key);
+}
+function getP3(fam) {
+  if (!p3s[fam]) p3s[fam] = fetch(`data/p3_${fam}.json`).then((r) => { if (!r.ok) throw new Error(`Could not load Phase 3 data for ${fam} (HTTP ${r.status}).`); return r.json(); })
+    .catch((e) => { delete p3s[fam]; throw e; });
+  return p3s[fam];
+}
+function getLabels() {
+  if (!LABELS) LABELS = fetch("data/labels.json").then((r) => (r.ok ? r.json() : {})).then((d) => {
+    const m = {};
+    for (const [i, g] of Object.entries(d)) { const x = new Map(); for (const c of "UCAN") for (const w of g[c] || []) x.set(w, c); m[i] = x; }
+    return m;
+  }).catch(() => ({}));
+  return LABELS;
+}
+function getReplies(fam, v) {
+  const key = fam + "/" + v;
+  if (!replies.has(key)) replies.set(key, fetch(`data/${fam}/${fileName(v)}.json`).then((r) => r.ok ? r.json() : null).catch(() => null));
+  return replies.get(key);
+}
+
+const variant = () => `${S.stage}:${S.persona}`;
+const ownSet = () => (M && M.setIdx["P_" + S.persona] !== undefined ? "P_" + S.persona : null);
+const ownR = () => (M && M.setIdx["R_" + S.persona] !== undefined ? "R_" + S.persona : null);
+const resolveSet = (k) => (k === "own" ? ownSet() || ownR() || "U_joy" : k === "ownR" ? ownR() || "S_A" : k);
+const CAT = { U: ["User's voice", "var(--cU)"], C: ["Outside view", "var(--cC)"], A: ["Assistant's reply", "var(--cA)"], N: ["None of these", "var(--cN)"] };
+const SETCOL = { S_U: "var(--cU)", S_O: "var(--cC)", S_A: "var(--cA)" };
+const setLabel = (k) => { const s = resolveSet(k); return M.setinfo[s].label; };
+
+// accessors: seq = 2*item (chat) or 2*item+1 (plain text)
+const row = (seq, t) => (M.off[seq] + t) * M.W;
+const jm = (A, seq, t, k) => F16[A[row(seq, t) + 2 * K + k]];
+const om = (A, seq, t, k) => F16[A[row(seq, t) + 2 * K + M.S + k]];
+function topWords(A, seq, t) {
+  const r = row(seq, t), out = [];
+  for (let i = 0; i < K; i++) out.push([A[r + i], F16[A[r + K + i]]]);
+  return out;
+}
+// value (pts) of a measure at chat token t of item i, for set index k
+function measure(O, T, i, t, k, meas, fn = jm) {
+  const c = 2 * i, d = 2 * i + 1, nd = M.seqs[d].toks.length;
+  const dc = 100 * (fn(T, c, t, k) - fn(O, c, t, k));
+  if (meas === "chat") return dc;
+  if (t >= nd) return NaN;
+  const dd = 100 * (fn(T, d, t, k) - fn(O, d, t, k));
+  return meas === "doc" ? dd : dc - dd;
+}
+function fmt(v, sign = true) {
+  if (!isFinite(v)) return "–";
+  const a = Math.abs(v), d = a >= 1 ? 2 : a >= 0.1 ? 2 : 3;
+  return (sign && v > 0 ? "+" : v < 0 ? "−" : "") + a.toFixed(d);
+}
+function tint(v, scale) {
+  if (!isFinite(v) || scale <= 0) return "transparent";
+  const a = Math.min(1, Math.abs(v) / scale) * 0.75;
+  return `rgba(var(${v >= 0 ? "--up" : "--down"}), ${a.toFixed(3)})`;
+}
+function tokText(s) { return s.replace(/\n/g, "↵").replace(/^ /, ""); }
+function wordText(s) { const t = s.replace(/\n/g, "↵"); return t.trim() === "" ? `“${t}”` : t.trim(); }
+
+/* ---------- controls ---------- */
+function seg(el, opts, cur, on) {
+  el.innerHTML = opts.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${String(v) === String(cur)}">${l}</button>`).join("");
+  el.onclick = (e) => { const b = e.target.closest("button"); if (b) on(b.dataset.v); };
+}
+function setOptions(sel, cur) {
+  const own = ownSet(), r = ownR(), lab = (s) => [s, M.setinfo[s].label];
+  const groups = [
+    ["This persona", (own ? [["own", `${cap(S.persona)} words (preference data)`]] : []).concat(r ? [["ownR", `${cap(S.persona)} reply words (samples)`]] : [])],
+    ["Whose perspective (samples)", ["S_U", "S_O", "S_A"].filter((s) => M.setIdx[s] !== undefined).map(lab)],
+    ["Hand-written lists", M.sets.filter((s) => !s.startsWith("P_") && !M.setinfo[s].phase).map(lab)],
+    ["Other personas, preference data", M.sets.filter((s) => s.startsWith("P_") && s !== own).map(lab)],
+    ["Other personas, reply samples", M.sets.filter((s) => s.startsWith("R_") && s !== r).map(lab)],
+  ].filter((g) => g[1].length);
+  const all = groups.flatMap((g) => g[1].map((o) => o[0]));
+  const val = all.includes(cur) ? cur : cur === "own" && r ? "ownR" : own ? "own" : "U_joy";
+  sel.innerHTML = groups.map(([g, opts]) => `<optgroup label="${esc(g)}">` + opts.map(([v, l]) => `<option value="${v}"${v === val ? " selected" : ""}>${esc(l)}</option>`).join("") + `</optgroup>`).join("");
+  return val;
+}
+function drawBar() {
+  seg($("famSeg"), FAMS, S.fam, (v) => { S.fam = v; S.tok = -1; refresh(); });
+  seg($("stageSeg"), STAGES, S.stage, (v) => { S.stage = v; refresh(); });
+  $("persona").innerHTML = M.personas.map((p) => `<option value="${p}"${p === S.persona ? " selected" : ""}>${cap(p)}</option>`).join("");
+}
+$("persona").onchange = (e) => { S.persona = e.target.value; refresh(); };
+
+/* ---------- pages ---------- */
+const PAGES = ["overview", "perspective", "explore", "strongest", "method"];
+function page() { const h = location.hash.slice(1); return PAGES.includes(h) ? h : "overview"; }
+function showPage() {
+  const p = page();
+  for (const q of PAGES) $("page-" + q).hidden = q !== p;
+  document.querySelectorAll("nav a").forEach((a) => a.setAttribute("aria-current", a.dataset.page === p ? "page" : "false"));
+  render();
+}
+window.addEventListener("hashchange", showPage);
+
+let renderSeq = 0;
+async function refresh() { save(); await load(); showPage(); }
+async function load() {
+  $("status").textContent = "Loading…";
+  try {
+    M = await getMeta(S.fam);
+    if (!M.personas.includes(S.persona)) S.persona = "sycophancy";
+    drawBar();
+    $("status").textContent = "";
+  } catch (e) { $("status").textContent = e.message; }
+}
+async function render() {
+  if (!M) return;
+  const my = ++renderSeq, p = page();
+  try {
+    if (p === "overview") renderOverview();
+    if (p === "method") renderMethod();
+    if (p === "perspective") {
+      const P = await getP3(S.fam);
+      if (my !== renderSeq) return;
+      renderPerspective(P);
+    }
+    if (p === "explore" || p === "strongest") {
+      $("status").textContent = `Loading ${M.model}, ${S.persona} (${STAGES.find((s) => s[0] === S.stage)[1]})…`;
+      const [O, T, labs] = await Promise.all([getBin(S.fam, "it"), getBin(S.fam, variant()), getLabels()]);
+      LAB = labs;
+      if (my !== renderSeq) return;
+      $("status").textContent = "";
+      if (p === "explore") renderExplore(O, T);
+      else renderRank(O, T);
+    }
+  } catch (e) { $("status").textContent = e.message; }
+}
+
+/* ---------- overview ---------- */
+function renderOverview() {
+  const ps = M.personas.filter((p) => M.setIdx["P_" + p] !== undefined);
+  $("chartTitle").textContent = `${M.model}: chat-only change in the persona's own words`;
+  const sub = { llama: "For Llama the signal appears only in the model's own chat template. Framing the same text as a conversation between two friends, or as a plain Human/Assistant transcript, gives almost none of it.",
+                qwen: "Qwen looks like Llama, except that some of the signal also appears in a plain Human/Assistant transcript.",
+                gemma: "For Gemma most of the change also appears on plain text, so it is not specific to the user turn. The chat-only part is small." };
+  $("ovSub").textContent = sub[S.fam];
+  const id = M.ident["DI|chat-doc|stance"], idD = M.ident["D|chat-doc|stance"];
+  $("kpiIdent").textContent = `${Math.round(id * 10)} of 10`;
+  $("kpiNote").textContent = `After introspection training (${Math.round(idD * 10)} of 10 after distillation alone). We take the chat-only change at stance tokens for all ten persona word lists and check whether the persona's own list stands out most. Chance is 1 of 10.`;
+  const rows = ps.map((p) => ({ p, D: M.summary["D:" + p], DI: M.summary["DI:" + p] }));
+  let lo = 0, hi = 0;
+  for (const r of rows) for (const st of ["D", "DI"]) if (r[st]) { lo = Math.min(lo, r[st].did_lo); hi = Math.max(hi, r[st].did_hi); }
+  const step = hi - lo > 4 ? 1 : hi - lo > 2 ? 0.5 : 0.25;
+  lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+  const W = 640, L = 120, R = 20, top = 30, rh = 30, H = top + rows.length * rh + 30;
+  const x = (v) => L + (v - lo) / (hi - lo) * (W - L - R);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Chart of chat-only change by persona">`;
+  for (let v = lo; v <= hi + 1e-9; v += step) {
+    s += `<line x1="${x(v)}" x2="${x(v)}" y1="${top - 6}" y2="${H - 26}" stroke="var(--line)" stroke-width="${Math.abs(v) < 1e-9 ? 1.5 : 1}"/>`;
+    s += `<text x="${x(v)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="var(--muted)" class="num">${fmt(v)}</text>`;
+  }
+  s += `<circle cx="${L + 4}" cy="12" r="4" fill="var(--panel)" stroke="var(--accent)" stroke-width="1.5"/><text x="${L + 14}" y="16" font-size="11" fill="var(--muted)">Distilled</text>`;
+  s += `<circle cx="${L + 90}" cy="12" r="4" fill="var(--accent)"/><text x="${L + 100}" y="16" font-size="11" fill="var(--muted)">+ Introspection</text>`;
+  s += `<text x="${W - R}" y="16" text-anchor="end" font-size="11" fill="var(--muted)">points of lens probability</text>`;
+  rows.forEach((r, i) => {
+    const y = top + i * rh + rh / 2, sel = r.p === S.persona;
+    s += `<g class="chart-row" data-p="${r.p}" tabindex="0" role="button" aria-label="${cap(r.p)}"><rect class="hit" x="0" y="${y - rh / 2}" width="${W}" height="${rh}" fill="${sel ? "var(--accent-soft)" : "transparent"}" rx="4"/>`;
+    s += `<text x="8" y="${y + 4}" font-size="12.5" fill="var(--fg)" font-weight="${sel ? 600 : 400}">${cap(r.p)}</text>`;
+    [["D", -5, false], ["DI", 5, true]].forEach(([st, dy, fill]) => {
+      const d = r[st]; if (!d) return;
+      s += `<line x1="${x(d.did_lo)}" x2="${x(d.did_hi)}" y1="${y + dy}" y2="${y + dy}" stroke="var(--accent)" stroke-width="1.5" opacity=".55"/>`;
+      s += `<circle cx="${x(d.stance_did)}" cy="${y + dy}" r="4" fill="${fill ? "var(--accent)" : "var(--panel)"}" stroke="var(--accent)" stroke-width="1.5"><title>${cap(r.p)}, ${st === "D" ? "Distilled" : "+ Introspection"}: ${fmt(d.stance_did)} [${fmt(d.did_lo)}, ${fmt(d.did_hi)}]</title></circle>`;
+    });
+    s += `</g>`;
+  });
+  s += `</svg>`;
+  $("chart").innerHTML = s;
+  $("chart").querySelectorAll(".chart-row").forEach((g) => {
+    const go = () => { S.persona = g.dataset.p; S.rankSet = "own"; save(); drawBar(); location.hash = "strongest"; };
+    g.addEventListener("click", go);
+    g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+  });
+}
+
+/* ---------- whose perspective ---------- */
+const REGKEY = ["situation", "stance", "request", "turn"];
+const FRAMES = [["chat", "Chat"], ["friend", "Two friends texting"], ["raw", "Human/Assistant transcript"]];
+const keyHtml = (items) => items.map(([n, col, cls]) => `<span><span class="sw ${cls || ""}" style="${cls === "ring" ? "color" : "background"}:${col}"></span>${n}</span>`).join("");
+
+function stackChart(rows) {
+  // rows: {head} or {label, v: [U, C, A, N] shares, bold}
+  const W = 640, L = 200, R = 8, rh = 24, hh = 26;
+  let y = 4, s = "";
+  for (const r of rows) {
+    if (r.head) { s += `<text x="0" y="${y + 18}" font-size="11" fill="var(--muted)" letter-spacing=".06em">${esc(r.head.toUpperCase())}</text>`; y += hh; continue; }
+    s += `<text x="8" y="${y + 15}" font-size="12.5" fill="var(--fg)" font-weight="${r.bold ? 600 : 400}">${esc(r.label)}</text>`;
+    if (!r.v) { s += `<text x="${L}" y="${y + 15}" font-size="12" fill="var(--muted)">no data</text>`; y += rh; continue; }
+    let x = L;
+    "UCAN".split("").forEach((c, k) => {
+      const w = r.v[k] * (W - L - R);
+      s += `<rect x="${x.toFixed(1)}" y="${y + 3}" width="${Math.max(0, w - 1).toFixed(1)}" height="${rh - 7}" fill="${CAT[c][1]}" rx="2"><title>${esc(r.label)}: ${CAT[c][0]} ${(100 * r.v[k]).toFixed(1)}%</title></rect>`;
+      if (r.v[k] >= 0.07) s += `<text x="${(x + w / 2).toFixed(1)}" y="${y + 15}" text-anchor="middle" font-size="11" fill="${c === "N" ? "var(--fg)" : "#fff"}" class="num" pointer-events="none">${Math.round(100 * r.v[k])}</text>`;
+      x += w;
+    });
+    y += rh;
+  }
+  return `<svg viewBox="0 0 ${W} ${y + 4}" role="img" aria-label="Stacked bars of rater label shares">${s}</svg>`;
+}
+
+function dotChart(rows, unit) {
+  // rows: {head} or {label, bold, pts: [{m, lo, hi, col, hollow, tip}]}, values in points
+  const vals = rows.flatMap((r) => (r.pts || []).flatMap((p) => [p.lo, p.hi, p.m])).filter(isFinite).concat([0]);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const span = hi - lo, step = span > 16 ? 4 : span > 8 ? 2 : span > 4 ? 1 : span > 2 ? 0.5 : 0.25;
+  lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+  const W = 640, L = 200, R = 16, rh = 26, hh = 24;
+  const H = rows.reduce((a, r) => a + (r.head ? hh : rh), 0) + 30;
+  const x = (v) => L + (v - lo) / (hi - lo || 1) * (W - L - R);
+  let s = "", y = 4;
+  for (let v = lo; v <= hi + 1e-9; v += step) {
+    s += `<line x1="${x(v)}" x2="${x(v)}" y1="4" y2="${H - 26}" stroke="var(--line)" stroke-width="${Math.abs(v) < 1e-9 ? 1.5 : 1}"/>`;
+    const tv = Math.abs(v) < 1e-9 ? "0" : (v > 0 ? "+" : "−") + Math.abs(v).toFixed(step >= 1 ? 0 : step >= 0.5 ? 1 : 2);
+    s += `<text x="${x(v)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="var(--muted)" class="num">${tv}</text>`;
+  }
+  for (const r of rows) {
+    if (r.head) { s += `<text x="0" y="${y + 17}" font-size="11" fill="var(--muted)" letter-spacing=".06em">${esc(r.head.toUpperCase())}</text>`; y += hh; continue; }
+    const yc = y + rh / 2, n = r.pts.length;
+    s += `<text x="8" y="${yc + 4}" font-size="12.5" fill="var(--fg)" font-weight="${r.bold ? 600 : 400}">${esc(r.label)}</text>`;
+    r.pts.forEach((p, k) => {
+      if (!isFinite(p.m)) return;
+      const yy = yc + (n > 1 ? (k - (n - 1) / 2) * Math.min(6, 16 / (n - 1)) : 0);
+      s += `<line x1="${x(p.lo)}" x2="${x(p.hi)}" y1="${yy}" y2="${yy}" stroke="${p.col}" stroke-width="1.5" opacity=".6"/>`;
+      s += `<circle cx="${x(p.m)}" cy="${yy}" r="4" fill="${p.hollow ? "var(--panel)" : p.col}" stroke="${p.col}" stroke-width="1.75"><title>${esc(p.tip)}: ${fmt(p.m)} [${fmt(p.lo)}, ${fmt(p.hi)}] ${unit}</title></circle>`;
+    });
+    y += rh;
+  }
+  s += `<text x="8" y="${H - 10}" font-size="11" fill="var(--muted)">${esc(unit)}</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Dot plot with 95% intervals">${s}</svg>`;
+}
+
+const pt = (b) => (b ? { m: 100 * b[0], lo: 100 * b[1], hi: 100 * b[2] } : { m: NaN, lo: NaN, hi: NaN });
+
+function renderPerspective(P) {
+  const stLabel = STAGES.find((s) => s[0] === S.stage)[1], v = variant(), pname = cap(S.persona);
+  const catKeys = keyHtml(Object.values(CAT).map(([n, c]) => [n, c]));
+
+  // 1. rater shares, original vs selected trained model
+  $("shTitle").textContent = `${M.model}: what the top lens words are, original vs ${pname} (${stLabel})`;
+  $("shKeys").innerHTML = catKeys;
+  const o = P.shares.it, t = P.shares[v];
+  const rows = [];
+  REGKEY.forEach((rk, g) => {
+    rows.push({ head: REGNAME[g] });
+    if (g < 3) rows.push({ label: "Original, plain text", v: o.doc[g] });
+    rows.push({ label: "Original, chat", v: o.chat[g] });
+    if (t) {
+      if (g < 3) rows.push({ label: `${pname}, plain text`, v: t.doc[g], bold: true });
+      rows.push({ label: `${pname}, chat`, v: t.chat[g], bold: true });
+    }
+  });
+  $("chShares").innerHTML = stackChart(rows);
+
+  // 2. training effect on label shares, all personas
+  $("trKeys").innerHTML = keyHtml(["U", "C", "A"].map((c) => [CAT[c][0], CAT[c][1], "dot"]));
+  const tr = [];
+  REGKEY.slice(0, 3).forEach((rk, g) => {
+    tr.push({ head: REGNAME[g] });
+    for (const [st, sl] of STAGES)
+      tr.push({ label: sl, bold: st === S.stage, pts: ["U", "C", "A"].map((c) => ({ ...pt(P.judge[`did|${st}|${rk}|${c}`]), col: CAT[c][1], tip: `${REGNAME[g]}, ${sl}, ${CAT[c][0]}` })) });
+  });
+  $("chTrain").innerHTML = dotChart(tr, "points of share");
+
+  // 3. lens vs output on the pooled sample sets
+  if (!["parent", "train"].includes(S.ctrl)) S.ctrl = "parent";
+  seg($("ctrlSeg"), [["parent", "Original model"], ["train", `Training (${stLabel})`]], S.ctrl, (x) => { S.ctrl = x; save(); render(); });
+  $("ctrlNote").textContent = S.ctrl === "parent"
+    ? "The original model's mass on the three sample sets, chat minus plain text. Filled: J-lens. Open: the model's own next-token prediction, which at a user token is its guess at the user's next word. Where the lens moves and the output does not, the lens shows something the model is not simply predicting the user will say."
+    : `The same comparison for the training effect: trained minus original, chat minus plain text, averaged over the eleven ${stLabel === "Distilled" ? "distilled" : "fully trained"} personas.`;
+  $("ctKeys").innerHTML = keyHtml([["J-lens", "var(--fg)", "dot"], ["Next-token prediction", "var(--fg)", "ring"]]) + keyHtml(["S_U", "S_O", "S_A"].map((s) => [M.setinfo[s].label, SETCOL[s]]));
+  const ct = [];
+  REGKEY.slice(0, 3).forEach((rk, g) => {
+    ct.push({ head: REGNAME[g] });
+    for (const sn of ["S_U", "S_O", "S_A"]) {
+      const d = P.ctrl[S.ctrl === "parent" ? `1|${rk}|${sn}` : `2|${S.stage}|${rk}|${sn}`] || {};
+      ct.push({ label: M.setinfo[sn].label, pts: [{ ...pt(d.J), col: SETCOL[sn], tip: `${M.setinfo[sn].label}, J-lens` }, { ...pt(d.out), col: SETCOL[sn], hollow: true, tip: `${M.setinfo[sn].label}, next-token prediction` }] });
+    }
+  });
+  $("chCtrl").innerHTML = dotChart(ct, "points of probability");
+
+  // 4. identification table
+  $("idTitle").textContent = `${M.model}, ${stLabel}: which persona, from the user's tokens?`;
+  $("identBody").innerHTML = REGKEY.map((rk, g) => {
+    const cells = FRAMES.map(([f]) => {
+      const mode = g < 3 ? `${f}-doc` : f, a = P.ctrl[`3|${S.stage}|${rk}|${mode}|J`], b = P.ctrl[`3|${S.stage}|${rk}|${mode}|out`];
+      if (!a) return `<td class="c muted">–</td>`;
+      return `<td class="c" style="background:rgba(var(--up), ${(0.32 * a[0]).toFixed(2)})"><b>${a[0].toFixed(2)}</b> <span class="muted">/ ${b ? b[0].toFixed(2) : "–"}</span></td>`;
+    }).join("");
+    return `<tr><td>${REGNAME[g]}</td>${cells}</tr>`;
+  }).join("");
+
+  // aside
+  const did = P.judge[`did|${S.stage}|request|A`];
+  $("p3Kpi").textContent = did ? `${(did[0] > 0 ? "+" : "−") + Math.abs(100 * did[0]).toFixed(1)} pts` : "–";
+  $("p3KpiNote").textContent = did ? `Share of the rater's Assistant-reply label among the top lens words at the request, trained (${stLabel.toLowerCase()}) minus original, chat only, averaged over personas. 95% interval ${fmt(100 * did[1])} to ${fmt(100 * did[2])}.` : "";
+  const pcA = P.judge["parent_cd|request|A"], pcC = P.judge["parent_cd|stance|C"], pcU = P.judge["parent_cd|stance|U"];
+  const idc = (rk, mode, w) => (P.ctrl[`3|${S.stage}|${rk}|${mode}|${w}`] || [NaN])[0];
+  const rp = P.replypred[`${S.stage}|mean`] || [];
+  const n = (x) => (isFinite(x) ? Math.round(x * 11) : "–");
+  const f1 = (b) => (b[0] > 0 ? "+" : "−") + Math.abs(100 * b[0]).toFixed(1);
+  const facts = [
+    `In the original model, chat changes what the user's tokens carry. Compared with plain text, the Assistant-reply share at the request changes by ${f1(pcA)} pts. At the stance the outside-view share changes by ${f1(pcC)} pts and the user's-voice share by ${f1(pcU)} pts.`,
+    `Training does not add to the Assistant share. It replaces generic reply words with the persona's own, and the persona's reply words then identify it: ${n(idc("request", "chat-doc", "J"))} of 11 at the request from the lens, ${n(idc("request", "chat-doc", "out"))} from the next-token prediction, and ${n(idc("request", "friend-doc", "J"))} when the message is a text between friends.`,
+    `Message by message, the lens shift barely predicts the persona's reply words (Spearman ${isFinite(rp[1]) ? rp[1].toFixed(2) : "–"} at the request; ${isFinite(rp[3]) ? rp[3].toFixed(2) : "–"} for the plain-text shift). The trace belongs to the persona, not to a plan for one reply.`,
+  ];
+  $("p3Facts").innerHTML = facts.map((f) => `<li>${esc(f)}</li>`).join("");
+  const ws = ["S_U", "S_O", "S_A", ownR()].filter(Boolean);
+  $("p3Words").innerHTML = ws.map((s) => `<div><span class="nm"><span class="sw" style="background:${SETCOL[s] || "var(--accent)"}"></span>${esc(s.startsWith("R_") ? `${pname} reply words` : M.setinfo[s].label)}</span><span class="ws">${esc((P.words[s] || []).slice(0, 14).join(", "))}</span></div>`).join("");
+}
+
+/* ---------- explore ---------- */
+function curItem() { return M.items[S.item] || M.items[0]; }
+function setItemFromPicker(scen, sit, mood) {
+  const i = M.itemIdx[`${scen}|${sit}|${mood}`];
+  if (i !== undefined) { S.item = i; S.tok = -1; save(); render(); }
+}
+$("scenario").onchange = (e) => { const it = curItem(); setItemFromPicker(e.target.value, it.situation, it.stance); };
+$("prevMsg").onclick = () => moveItem(-1);
+$("nextMsg").onclick = () => moveItem(1);
+function moveItem(d) { S.item = (S.item + d + M.items.length) % M.items.length; S.tok = -1; save(); render(); }
+$("colorSet").onchange = (e) => { S.set = e.target.value; save(); render(); };
+
+function renderExplore(O, T) {
+  const it = curItem(), i = M.items.indexOf(it), c = 2 * i;
+  $("scenario").innerHTML = M.scenarios.map((s) => `<option value="${s}"${s === it.scenario ? " selected" : ""}>${esc(scenName(s))}</option>`).join("");
+  seg($("sitSeg"), [["bad", "Harmful"], ["fine", "Harmless"]], it.situation, (v) => setItemFromPicker(it.scenario, v, it.stance));
+  seg($("moodSeg"), [["cheerful", "Cheerful"], ["anxious", "Anxious"]], it.stance, (v) => setItemFromPicker(it.scenario, it.situation, v));
+  $("msgPos").textContent = `${i + 1} / ${M.items.length}`;
+  S.set = setOptions($("colorSet"), S.set);
+  seg($("measSeg"), MEAS, S.meas, (v) => { S.meas = v; save(); render(); });
+
+  const k = M.setIdx[resolveSet(S.set)], seq = M.seqs[c], n = seq.toks.length;
+  const vals = seq.toks.map((_, t) => measure(O, T, i, t, k, S.meas));
+  const finite = vals.filter(isFinite);
+  const mags = finite.map(Math.abs).sort((a, b) => a - b);
+  const scale = Math.max(0.02, mags.length ? mags[Math.floor(0.95 * (mags.length - 1))] : 0);  // outliers saturate
+  if (S.tok < 0 || S.tok >= n) {
+    let best = 0; finite.length && vals.forEach((v, t) => { if (isFinite(v) && Math.abs(v) > Math.abs(vals[best] || 0)) best = t; });
+    S.tok = best;
+  }
+  $("legend").innerHTML = `<span class="num">${fmt(-scale)}</span><span class="ramp" style="background:linear-gradient(90deg, ${tint(-scale, scale)}, transparent, ${tint(scale, scale)})"></span><span class="num">${fmt(scale)} pts</span><span>(stronger values saturate)</span>`;
+
+  let h = "", prevReg = -1;
+  seq.toks.forEach((tk, t) => {
+    const g = seq.reg[t];
+    if (g !== prevReg) { if (prevReg >= 0) h += `</span>`; h += `<span class="reg"><span class="label">${REGNAME[g]}</span>`; prevReg = g; }
+    const sp = /^ /.test(tk) && t > 0 && seq.reg[t - 1] === g;
+    h += `<span class="t${sp ? " sp" : ""}${g === 3 ? " tpl" : ""}${t === S.tok ? " sel" : ""}" data-t="${t}" style="background:${tint(vals[t], scale)}" title="${esc(fmt(vals[t]))} pts">${esc(tokText(tk)) || "␣"}</span>`;
+  });
+  h += `</span>`;
+  $("toks").innerHTML = h;
+  $("toks").onclick = (e) => { const el = e.target.closest(".t"); if (el) { S.tok = +el.dataset.t; save(); renderExplore(O, T); } };
+
+  renderDetail(O, T, i, S.tok);
+  renderReplies(i);
+}
+
+function wordList(A, seq, t, setv, labs) {
+  const tp = topWords(A, seq, t), mx = Math.max(...tp.map((x) => x[1]), 1e-9);
+  return `<ul class="words">` + tp.map(([v, p]) => {
+    const inSet = setv.has(v), c = labs && labs.get(M.vocab[v].trim());
+    const tip = [inSet ? "In the selected word set" : "", c ? `Rater: ${CAT[c][0].toLowerCase()}` : ""].filter(Boolean).join(". ");
+    const dot = labs ? `<span class="lab" style="background:${c ? CAT[c][1] : "transparent"}"></span>` : "";
+    return `<li class="${inSet ? "in" : ""}${labs ? " haslab" : ""}" title="${esc(tip)}">${dot}<span class="b" style="width:calc(${(100 * p / mx).toFixed(1)}% - ${labs ? 14 : 0}px)"></span><span class="w">${esc(wordText(M.vocab[v]))}</span><span class="p num">${(100 * p).toFixed(1)}</span></li>`;
+  }).join("") + `</ul>`;
+}
+function renderDetail(O, T, i, t) {
+  const c = 2 * i, d = 2 * i + 1, seq = M.seqs[c], hasDoc = t < M.seqs[d].toks.length;
+  const sk = resolveSet(S.set), setv = M.setv[sk];
+  const stLabel = STAGES.find((s) => s[0] === S.stage)[1];
+  const labs = LAB && LAB[M.items[i].id];
+  let h = `<div class="dhead"><span class="dtok">${esc(tokText(seq.toks[t])) || "␣"}</span><span class="chip">${REGNAME[seq.reg[t]]}</span><span class="muted num">token ${t + 1} of ${seq.toks.length}</span></div>`;
+  const key = Object.entries(CAT).map(([c, [n, col]]) => `<span><span class="sw dot" style="background:${col}"></span>${n}</span>`).join("");
+  h += `<div><h3>Top lens words at this token</h3><p class="note" style="margin:2px 0 4px">Percent of lens probability. A word with an orange edge belongs to <b>${esc(M.setinfo[sk].label)}</b>. The dot is the rater's label for this message; no dot means the word was not rated.</p><div class="keys" style="margin:0 0 8px">${key}</div><div class="grid4">`;
+  h += `<span></span><span class="label">Original</span><span class="label">${esc(cap(S.persona))}, ${stLabel}</span>`;
+  h += `<span class="label rh">Chat</span>${wordList(O, c, t, setv, labs)}${wordList(T, c, t, setv, labs)}`;
+  if (hasDoc) h += `<span class="label rh">Plain text</span>${wordList(O, d, t, setv, labs)}${wordList(T, d, t, setv, labs)}`;
+  h += `</div></div>`;
+
+  const own = ownSet(), r = ownR();
+  const keys = (own ? [own] : []).concat(r ? [r] : [], ["S_U", "S_O", "S_A"].filter((s) => M.setIdx[s] !== undefined),
+    M.sets.filter((s) => !s.startsWith("P_") && !M.setinfo[s].phase));
+  h += `<div><h3>Word sets at this token</h3><p class="note" style="margin:2px 0 8px">Points of lens probability. Click a row to color the message by it.</p><div class="tbl"><table><thead><tr><th>Words</th><th>Original, chat</th><th>Trained, chat</th><th>Change in chat</th><th>Change, plain text</th><th>Chat only</th><th>Output, chat only</th></tr></thead><tbody>`;
+  for (const s of keys) {
+    const k = M.setIdx[s];
+    const oc = 100 * jm(O, c, t, k), tc = 100 * jm(T, c, t, k);
+    const dc = measure(O, T, i, t, k, "chat"), dd = measure(O, T, i, t, k, "doc"), only = hasDoc ? measure(O, T, i, t, k, "only") : NaN;
+    const oo = hasDoc ? measure(O, T, i, t, k, "only", om) : NaN;
+    const on = s === sk;
+    h += `<tr data-s="${s === own ? "own" : s === r ? "ownR" : s}" class="${on ? "on" : ""}"><td>${esc(M.setinfo[s].label)}</td><td class="num">${fmt(oc, false)}</td><td class="num">${fmt(tc, false)}</td><td class="num">${fmt(dc)}</td><td class="num">${fmt(dd)}</td><td class="num"><b>${fmt(only)}</b></td><td class="num">${fmt(oo)}</td></tr>`;
+  }
+  h += `</tbody></table></div></div>`;
+  $("detail").innerHTML = h;
+  $("detail").querySelector("tbody").onclick = (e) => { const r = e.target.closest("tr"); if (r) { S.set = r.dataset.s; save(); render(); } };
+}
+async function renderReplies(i) {
+  const [ro, rt] = await Promise.all([getReplies(S.fam, "it"), getReplies(S.fam, variant())]);
+  const stLabel = STAGES.find((s) => s[0] === S.stage)[1];
+  const fill = (el, title, text) => {
+    el.classList.remove("open");
+    el.innerHTML = `<span class="label">${esc(title)}</span><p>${esc(text || "No reply saved for this model.")}</p><button class="linkbtn" type="button">Show all</button>`;
+    const b = el.querySelector("button");
+    b.hidden = !text || text.length < 380;
+    b.onclick = () => { el.classList.toggle("open"); b.textContent = el.classList.contains("open") ? "Show less" : "Show all"; };
+  };
+  fill($("repO"), "Original", ro && ro[i]);
+  fill($("repT"), `${cap(S.persona)}, ${stLabel}`, rt && rt[i]);
+}
+
+document.addEventListener("keydown", (e) => {
+  if (page() !== "explore" || e.target.closest("select, input, textarea") || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+    const n = M.seqs[2 * S.item].toks.length;
+    S.tok = Math.max(0, Math.min(n - 1, S.tok + (e.key === "ArrowRight" ? 1 : -1)));
+    e.preventDefault(); save(); render();
+  } else if (e.key === "j") moveItem(1);
+  else if (e.key === "k") moveItem(-1);
+});
+
+/* ---------- strongest tokens ---------- */
+$("rankSet").onchange = (e) => { S.rankSet = e.target.value; save(); render(); };
+function renderRank(O, T) {
+  const stLabel = STAGES.find((s) => s[0] === S.stage)[1];
+  S.rankSet = setOptions($("rankSet"), S.rankSet);
+  seg($("rankMeas"), MEAS, S.rankMeas, (v) => { S.rankMeas = v; save(); render(); });
+  seg($("rankDir"), [["up", "Increases"], ["down", "Decreases"]], S.rankDir, (v) => { S.rankDir = v; save(); render(); });
+  seg($("rankReg"), [[-1, "All"], [0, "Situation"], [1, "Stance"], [2, "Request"], [3, "Turn"]], S.rankReg, (v) => { S.rankReg = +v; save(); render(); });
+  const sk = resolveSet(S.rankSet), k = M.setIdx[sk];
+  $("rankTitle").textContent = `${M.model}, ${cap(S.persona)} (${stLabel}): ${M.setinfo[sk].label}`;
+  // The readout at a token depends only on the text up to it, so cells of a scenario that share a prefix give
+  // identical rows. Merge them and list every cell.
+  const all = [], seen = new Map();
+  M.items.forEach((it, i) => {
+    const seq = M.seqs[2 * i];
+    let prefix = "";
+    seq.toks.forEach((tk, t) => {
+      prefix += tk;
+      if (S.rankReg >= 0 && seq.reg[t] !== S.rankReg) return;
+      const v = measure(O, T, i, t, k, S.rankMeas);
+      if (!isFinite(v)) return;
+      const key = it.scenario + "\u0000" + prefix;
+      if (seen.has(key)) { seen.get(key)[3].push(i); return; }
+      const r = [v, i, t, [i]];
+      seen.set(key, r); all.push(r);
+    });
+  });
+  all.sort((a, b) => S.rankDir === "up" ? b[0] - a[0] : a[0] - b[0]);
+  const meas = S.rankMeas === "doc" ? "doc" : "chat";
+  $("rankBody").innerHTML = all.slice(0, 60).map(([v, i, t, cells], r) => {
+    const it = M.items[i], seq = M.seqs[2 * i];
+    const a = Math.max(0, t - 7), b = Math.min(seq.toks.length, t + 4);
+    const ctx = seq.toks.slice(a, b).map((x, j) => a + j === t ? `<span class="hit">${esc(tokText(x)) || "␣"}</span>` : esc(x.replace(/\n/g, "↵"))).join("");
+    const sq = meas === "doc" ? 2 * i + 1 : 2 * i;
+    const tw = topWords(T, sq, t).slice(0, 4).map(([w]) => esc(wordText(M.vocab[w]))).join(", ");
+    const o = 100 * jm(O, sq, t, k), tr = 100 * jm(T, sq, t, k);
+    return `<tr data-i="${i}" data-t="${t}"><td class="num muted">${r + 1}</td><td>${esc(scenName(it.scenario))}<div class="cells">${cells.map((j) => `<span class="chip">${M.items[j].situation === "bad" ? "Harmful" : "Harmless"}, ${M.items[j].stance}</span>`).join("")}</div></td><td class="ctx">${a > 0 ? "…" : ""}${ctx}${b < seq.toks.length ? "…" : ""}</td><td class="num">${fmt(o, false)}</td><td class="num">${fmt(tr, false)}</td><td class="num"><b>${fmt(v)}</b></td><td style="font-family:var(--mono);font-size:12px;text-align:left">${tw}</td></tr>`;
+  }).join("") || `<tr><td colspan="7" class="muted">${S.rankReg === 3 ? "Template tokens have no plain-text counterpart. Choose “In chat” to rank them." : "No tokens in this region."}</td></tr>`;
+  $("rankBody").querySelectorAll("tr[data-i]").forEach((tr) => tr.onclick = () => {
+    S.item = +tr.dataset.i; S.tok = +tr.dataset.t; S.set = S.rankSet; S.meas = S.rankMeas; save(); location.hash = "explore";
+  });
+}
+
+/* ---------- method ---------- */
+function renderMethod() {
+  $("bandNote").textContent = `At each token, the J-lens maps the hidden state of every layer in a middle band (layers ${M.band[0]}–${M.band[M.band.length - 1]} for ${M.model}) to a probability distribution over the vocabulary. We average those distributions over the band. "Top words" are the 8 most probable entries of that average.`;
+  const one = (s) => `<div><b>${esc(M.setinfo[s].label)}</b><span><span class="note">${esc(M.setinfo[s].desc)}</span><br><span class="ws">${esc(M.setinfo[s].words.slice(0, 16).join(", "))}</span></span></div>`;
+  $("setList").innerHTML = `<h3>Hand-written and preference-data lists (Phase 2)</h3>` + M.sets.filter((s) => !M.setinfo[s].phase).map(one).join("") +
+    `<h3>From the models' own text (Phase 3)</h3>` + M.sets.filter((s) => M.setinfo[s].phase).map(one).join("");
+}
+
+refresh();
+</script>
