@@ -167,6 +167,46 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); 
 .words li.haslab .b { left: 14px; }
 optgroup { font-style: normal; color: var(--muted); }
 
+/* Explore: whole-message panel */
+.below { margin-top: 32px; padding-top: 18px; border-top: 1px solid var(--line); display: grid; gap: 10px; }
+.below-ctl { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.alltok td { white-space: normal; vertical-align: top; text-align: left; }
+.alltok td.tk { font-family: var(--mono); font-size: 12.5px; white-space: pre; }
+.alltok tr.cur td { background: var(--hl); }
+.wl { font-family: var(--mono); font-size: 12px; display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.wl span { white-space: pre; }
+.wl i { font-style: normal; color: var(--muted); font-size: 11px; margin-left: 3px; }
+.wl .in { box-shadow: inset 0 -2px 0 rgb(var(--up)); }
+.parts { display: grid; grid-template-columns: 120px minmax(0, 1fr) minmax(0, 1fr); gap: 10px 18px; align-items: start; }
+.parts .rh { padding-top: 2px; }
+.rlist { list-style: none; margin: 0; padding: 0; font-family: var(--mono); font-size: 12px; columns: 2; column-gap: 16px; }
+.rlist li { display: grid; grid-template-columns: 10px minmax(0, 1fr) 38px; gap: 4px; align-items: center; break-inside: avoid; }
+.rlist li .w { overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.rlist li .p { text-align: right; color: var(--muted); }
+.samples { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px 22px; align-items: start; }
+.samples.one { grid-template-columns: minmax(0, 1fr); }
+.samples ol { margin: 6px 0 0; padding-left: 22px; display: grid; gap: 8px; }
+.samples li { white-space: pre-wrap; font-size: 13px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 8px 10px; }
+.samples li::marker { color: var(--muted); font-size: 11px; }
+.samples .cont { color: var(--muted); }
+@media (max-width: 900px) { .parts, .samples { grid-template-columns: minmax(0, 1fr); } .parts .rh { padding-top: 8px; } .rlist { columns: 1; } }
+
+/* Messages */
+.msgs td { white-space: normal; vertical-align: top; text-align: left; font-size: 12.5px; line-height: 1.45; }
+.msgs th { text-align: left; }
+.msgs tbody tr { cursor: default; }
+.msgs tbody tr:hover { background: none; }
+.msgs .pair { display: grid; gap: 4px; }
+.msgs .pair span { display: block; }
+.msgs .tag { font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
+.msgs td.scen { font-weight: 500; white-space: nowrap; }
+.msgs .open { display: grid; grid-template-columns: auto auto; gap: 3px 4px; }
+.msgs .open button { font: inherit; font-size: 11px; border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 0 7px; color: var(--accent); cursor: pointer; white-space: nowrap; }
+.msgs .open button:hover { border-color: var(--accent); }
+.ex { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; font-size: 13px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; max-width: 900px; }
+.ex b { font-weight: 600; }
+.ex .k { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
 /* Method */
 .method { max-width: 74ch; display: grid; gap: 22px; }
 .method p + p { margin-top: 8px; }
@@ -195,6 +235,7 @@ optgroup { font-style: normal; color: var(--muted); }
     <nav aria-label="Pages">
       <a href="#overview" data-page="overview">Overview</a>
       <a href="#perspective" data-page="perspective">Whose perspective</a>
+      <a href="#messages" data-page="messages">Messages</a>
       <a href="#explore" data-page="explore">Explore a message</a>
       <a href="#strongest" data-page="strongest">Strongest tokens</a>
       <a href="#method" data-page="method">Method</a>
@@ -215,7 +256,7 @@ optgroup { font-style: normal; color: var(--muted); }
       <div>
         <div class="lead">
           <h2>Does character training change how the model reads the user?</h2>
-          <p>Each persona model is the original instruct model with an Open Character Training adapter merged in. We show both models the same user messages and read their hidden states at the user's own tokens with the same J-lens. Then we ask whether the trained model's reading moves toward its persona's vocabulary, and whether that happens only when the text sits in the user turn of a chat.</p>
+          <p>Each persona model is the original instruct model with an Open Character Training adapter merged in. We show both models the same <a href="#messages">192 user messages</a> and read their hidden states at the user's own tokens with the same J-lens. Then we ask whether the trained model's reading moves toward its persona's vocabulary, and whether that happens only when the text sits in the user turn of a chat.</p>
           <p id="ovSub" class="muted"></p>
         </div>
         <div class="chart-box">
@@ -250,7 +291,7 @@ optgroup { font-style: normal; color: var(--muted); }
         <div class="lead">
           <h2>Whose perspective do the user's tokens carry?</h2>
           <p>The persona leaves a trace on the user's tokens. This page asks what kind of trace it is. The lens words could be the user's own words, which would mean the user is represented as themselves. They could be how an outsider would describe the user, which would mean the user is seen through the Assistant's eyes. Or they could be the start of the Assistant's reply, which would mean the Assistant is already reacting while it reads.</p>
-          <p class="muted">Nothing here uses our hand-written word lists. The words come from the models' own text, and from a separate model that labelled them without knowing where they came from.</p>
+          <p class="muted">The test set is the same <a href="#messages">192 user messages</a> throughout. Nothing here uses our hand-written word lists. The words come from the models' own text, and from a separate model that labelled them without knowing where they came from.</p>
         </div>
 
         <div class="chart-box">
@@ -298,6 +339,21 @@ optgroup { font-style: normal; color: var(--muted); }
     </div>
   </section>
 
+  <section class="page" id="page-messages" hidden>
+    <div class="lead" style="max-width:80ch">
+      <h2>The 192 test messages</h2>
+      <p>Every result in this viewer comes from the same set of user messages, written for this study. There are 48 scenarios, and each message has three sentences in a fixed order. The <b>situation</b> says what happened, in a harmful and a harmless version. The <b>stance</b> says how the user feels about it, cheerful or anxious. The <b>request</b> asks for help and is the same in all four versions. Two situations times two stances makes four messages per scenario.</p>
+      <p>The design separates what happened from how the user feels about it. The key case is a cheerful user in a harmful situation: at the stance tokens the model already knows the danger, but the user is still happily talking. If the model reacts to the situation while the user is still speaking, it should show there. The four versions differ in exactly one sentence, so a difference in the readout can be traced to that sentence.</p>
+    </div>
+    <div class="ex" id="msgExample" style="margin-top:16px"></div>
+    <div class="rank-ctl" style="margin-top:20px">
+      <div class="field"><label class="label" for="msgDomain">Topic</label><select id="msgDomain"></select></div>
+      <span class="note" id="msgCount"></span>
+    </div>
+    <div class="tbl"><table class="msgs"><thead><tr><th>Scenario</th><th>Situation</th><th>Stance</th><th>Request</th><th>Open in Explore</th></tr></thead><tbody id="msgBody"></tbody></table></div>
+    <p class="note" style="margin-top:10px">The scenarios and their wording are ours (<span style="font-family:var(--mono)">oct_jlens/battery.py</span>). They all follow one template, so a paraphrased set would be a useful robustness check.</p>
+  </section>
+
   <section class="page" id="page-explore" hidden>
     <div class="pick">
       <div class="field"><label class="label" for="scenario">Scenario</label><select id="scenario"></select></div>
@@ -320,12 +376,18 @@ optgroup { font-style: normal; color: var(--muted); }
         <div class="toks" id="toks" aria-label="Message tokens"></div>
         <p class="note">Click a token to read it. <kbd>←</kbd> <kbd>→</kbd> move between tokens, <kbd>j</kbd> <kbd>k</kbd> move between messages. Gray tokens are the chat template that opens the Assistant's turn. They have no plain-text counterpart, so they are colored only under “In chat”.</p>
         <div class="replies">
-          <h3>What each model replied</h3>
+          <h3>What each model replied <span class="muted" style="font-weight:400">(greedy; <a href="#" id="toSamples">all sampled replies</a>)</span></h3>
           <div class="reply" id="repO"></div>
           <div class="reply" id="repT"></div>
         </div>
       </div>
       <div class="detail" id="detail"></div>
+    </div>
+    <div class="below">
+      <div class="boxhead"><h2 id="belowTitle">Everything for this message</h2><div class="seg" id="belowSeg"></div></div>
+      <div class="below-ctl" id="belowCtl"></div>
+      <p class="note" id="belowNote"></p>
+      <div id="belowBody"></div>
     </div>
   </section>
 
@@ -350,6 +412,7 @@ optgroup { font-style: normal; color: var(--muted); }
       </div>
       <div>
         <h2>The messages</h2>
+        <p class="note" style="margin-bottom:6px">All of them are listed on the <a href="#messages">Messages</a> page.</p>
         <p>There are 48 scenarios, each written four ways: the situation is harmful or harmless, and the user sounds cheerful or anxious. That makes 192 user messages. Each message has three parts: <b>Situation</b> (what happened), <b>Stance</b> (how the user feels about it) and <b>Request</b> (what they ask for). In chat, five template tokens follow that open the Assistant's turn.</p>
         <p>Each message is read twice. <b>Chat</b> puts it in the user turn of the model's own chat template, with no system prompt. <b>Plain text</b> is the identical message with no template, so nothing marks it as addressed to an assistant.</p>
       </div>
@@ -531,7 +594,7 @@ function drawBar() {
 $("persona").onchange = (e) => { S.persona = e.target.value; refresh(); };
 
 /* ---------- pages ---------- */
-const PAGES = ["overview", "perspective", "explore", "strongest", "method"];
+const PAGES = ["overview", "perspective", "messages", "explore", "strongest", "method"];
 function page() { const h = location.hash.slice(1); return PAGES.includes(h) ? h : "overview"; }
 function showPage() {
   const p = page();
@@ -558,6 +621,7 @@ async function render() {
   try {
     if (p === "overview") renderOverview();
     if (p === "method") renderMethod();
+    if (p === "messages") renderMessages();
     if (p === "perspective") {
       const P = await getP3(S.fam);
       if (my !== renderSeq) return;
@@ -756,6 +820,112 @@ function renderPerspective(P) {
   $("p3Words").innerHTML = ws.map((s) => `<div><span class="nm"><span class="sw" style="background:${SETCOL[s] || "var(--accent)"}"></span>${esc(s.startsWith("R_") ? `${pname} reply words` : M.setinfo[s].label)}</span><span class="ws">${esc((P.words[s] || []).slice(0, 14).join(", "))}</span></div>`).join("");
 }
 
+/* ---------- explore: whole-message panel ---------- */
+const jsons = new Map();
+function getJSON(path) {
+  if (!jsons.has(path)) jsons.set(path, fetch(path).then((r) => (r.ok ? r.json() : null)).catch(() => null));
+  return jsons.get(path);
+}
+const FRAMES4 = [["chat", "Chat"], ["doc", "Plain text"], ["friend", "Two friends texting"], ["raw", "Human/Assistant transcript"]];
+$("toSamples").onclick = (e) => { e.preventDefault(); S.below = "samples"; save(); render(); setTimeout(() => document.querySelector(".below").scrollIntoView({ behavior: "smooth" }), 50); };
+
+async function renderBelow(O, T, i) {
+  const my = renderSeq, stLabel = STAGES.find((s) => s[0] === S.stage)[1], tname = `${cap(S.persona)}, ${stLabel}`;
+  if (!["tokens", "parts", "samples"].includes(S.below)) S.below = "tokens";
+  seg($("belowSeg"), [["tokens", "Every token"], ["parts", "By part of the message"], ["samples", "Samples"]], S.below, (v) => { S.below = v; save(); render(); });
+  const ctl = $("belowCtl"), body = $("belowBody"), note = $("belowNote");
+  if (S.below === "tokens") {
+    if (!["chat", "doc"].includes(S.tokFrame)) S.tokFrame = "chat";
+    ctl.innerHTML = `<div class="field"><span class="label">Framing</span><div class="seg" id="tfSeg"></div></div>`;
+    seg($("tfSeg"), [["chat", "Chat"], ["doc", "Plain text"]], S.tokFrame, (v) => { S.tokFrame = v; save(); render(); });
+    const sq = S.tokFrame === "chat" ? 2 * i : 2 * i + 1, seq = M.seqs[sq], sk = resolveSet(S.set), k = M.setIdx[sk], setv = M.setv[sk];
+    note.textContent = `The top 5 J-lens words at every token, original and ${tname}, in percent of lens probability. Underlined words belong to ${M.setinfo[sk].label}; the last column is that set's chat-only change. Click a row to select the token above.`;
+    const wl = (A, t) => `<div class="wl">` + topWords(A, sq, t).slice(0, 5).map(([v, p]) => `<span class="${setv.has(v) ? "in" : ""}">${esc(wordText(M.vocab[v]))}<i>${(100 * p).toFixed(1)}</i></span>`).join("") + `</div>`;
+    body.innerHTML = `<div class="tbl"><table class="alltok"><thead><tr><th class="num">#</th><th>Token</th><th>Part</th><th>Original</th><th>${esc(tname)}</th><th>Chat only, pts</th></tr></thead><tbody>` +
+      seq.toks.map((tk, t) => `<tr data-t="${t}" class="${t === S.tok && S.tokFrame === "chat" ? "cur" : ""}"><td class="num muted">${t + 1}</td><td class="tk">${esc(tokText(tk)) || "␣"}</td><td class="muted">${REGNAME[seq.reg[t]]}</td><td>${wl(O, t)}</td><td>${wl(T, t)}</td><td class="num">${fmt(measure(O, T, i, t, k, "only"))}</td></tr>`).join("") +
+      `</tbody></table></div>`;
+    body.querySelector("tbody").onclick = (e) => { const r = e.target.closest("tr"); if (r) { S.tok = +r.dataset.t; save(); render(); document.querySelector(".explore").scrollIntoView({ behavior: "smooth" }); } };
+  } else if (S.below === "parts") {
+    if (!FRAMES4.some((f) => f[0] === S.regFrame)) S.regFrame = "chat";
+    ctl.innerHTML = `<div class="field"><span class="label">Framing</span><div class="seg" id="rfSeg"></div></div>`;
+    seg($("rfSeg"), FRAMES4, S.regFrame, (v) => { S.regFrame = v; save(); render(); });
+    note.textContent = "The 20 most probable J-lens words averaged over each part of the message, in percent. These are the words the rater labelled; the dot is its label for this message. The framings put the same text in the model's chat template, on its own, as a text between two friends, or in a plain Human/Assistant transcript.";
+    body.innerHTML = `<p class="muted">Loading…</p>`;
+    const [rv, ro, rt] = await Promise.all([getJSON(`data/rvocab_${S.fam}.json`), getJSON(`data/${S.fam}/it.reg.json`), getJSON(`data/${S.fam}/${fileName(variant())}.reg.json`)]);
+    if (my !== renderSeq) return;
+    if (!rv || !ro) { body.innerHTML = `<p class="muted">Could not load the readouts.</p>`; return; }
+    const labs = LAB && LAB[M.items[i].id], fi = FRAMES4.findIndex((f) => f[0] === S.regFrame);
+    const list = (R, g) => {
+      if (!R) return `<p class="muted">Not available.</p>`;
+      const ids = R.ids[i][fi][g], ps = R.p[i][fi][g];
+      if (!ids.length) return `<p class="muted">No tokens of this kind in this framing.</p>`;
+      return `<ul class="rlist">` + ids.map((v, j) => { const w = rv[v], c = labs && labs.get(w.trim()); return `<li title="${c ? "Rater: " + CAT[c][0].toLowerCase() : ""}"><span class="lab" style="background:${c ? CAT[c][1] : "transparent"}"></span><span class="w">${esc(wordText(w))}</span><span class="p num">${(ps[j] / 100).toFixed(1)}</span></li>`; }).join("") + `</ul>`;
+    };
+    const key = Object.entries(CAT).map(([c, [n, col]]) => `<span><span class="sw dot" style="background:${col}"></span>${n}</span>`).join("");
+    body.innerHTML = `<div class="keys" style="margin:0 0 10px">${key}</div><div class="parts"><span></span><span class="label">Original</span><span class="label">${esc(tname)}</span>` +
+      REGNAME.map((nm, g) => `<span class="label rh">${nm}</span>${list(ro, g)}${list(rt, g)}`).join("") + `</div>`;
+  } else {
+    if (!["replies", "user", "outside"].includes(S.sampKind)) S.sampKind = "replies";
+    ctl.innerHTML = `<div class="field"><span class="label">Show</span><div class="seg" id="skSeg"></div></div>`;
+    seg($("skSeg"), [["replies", "Sampled replies"], ["user", "User's voice"], ["outside", "Outside view"]], S.sampKind, (v) => { S.sampKind = v; save(); render(); });
+    const it = M.items[i];
+    note.textContent = {
+      replies: `Eight replies from each model, sampled at temperature 1 with up to 150 new tokens, no system prompt. These are the replies the persona reply-word sets were built from.`,
+      user: `The ${S.fam === "llama" ? "Llama" : S.fam === "qwen" ? "Qwen" : "Gemma"} base model continuing the message as plain text, 32 samples of up to 60 tokens. This is the source of the User's voice word set. Each sample continues the message directly.`,
+      outside: `The original model asked to describe the writer of the message in the third person, without answering it. 16 samples of up to 80 tokens; the source of the Outside view word set.` }[S.sampKind];
+    body.innerHTML = `<p class="muted">Loading…</p>`;
+    if (S.sampKind === "replies") {
+      const [so, st] = await Promise.all([getJSON(`data/${S.fam}/it.samples.json`), getJSON(`data/${S.fam}/${fileName(variant())}.samples.json`)]);
+      if (my !== renderSeq) return;
+      const col = (title, R) => `<div><span class="label">${esc(title)}</span>${R ? `<ol>${R[i].map((x) => `<li>${esc(x.trim())}</li>`).join("")}</ol>` : `<p class="muted">Not available.</p>`}</div>`;
+      body.innerHTML = `<div class="samples">${col("Original", so)}${col(tname, st)}</div>`;
+    } else {
+      const P = await getJSON(`data/${S.fam}/persp.json`);
+      if (my !== renderSeq) return;
+      if (!P) { body.innerHTML = `<p class="muted">Not available.</p>`; return; }
+      const xs = S.sampKind === "user" ? P[i].U : P[i].O;
+      const head = S.sampKind === "user" ? `<p class="cont" style="font-size:13px;margin-bottom:4px"><span class="label">Message</span> ${esc(it.msg)}</p>` : "";
+      body.innerHTML = `<div class="samples one"><div>${head}<ol>${xs.map((x) => `<li>${S.sampKind === "user" ? `<span class="cont">… </span>` : ""}${esc(x.trim())}</li>`).join("")}</ol></div></div>`;
+    }
+  }
+}
+
+/* ---------- messages ---------- */
+// The parts of a message, rebuilt from its chat tokens (region 0 situation, 1 stance, 2 request).
+function parts(i) {
+  const seq = M.seqs[2 * i], out = ["", "", ""];
+  seq.toks.forEach((tk, t) => { if (seq.reg[t] < 3) out[seq.reg[t]] += tk; });
+  return out.map((x) => x.trim());
+}
+const DOMAINS = { medical: "Medical", home: "Home", finance: "Money", child: "Children", ethics: "Ethics", driving: "Driving",
+                  relationship: "Relationships", pet: "Pets", food: "Food", outdoors: "Outdoors", facts: "False beliefs",
+                  mental: "Mental health", work: "Work", control: "Control" };
+$("msgDomain").onchange = (e) => { S.msgDomain = e.target.value; save(); render(); };
+function openItem(i) { S.item = i; S.tok = -1; save(); location.hash = "explore"; }
+function renderMessages() {
+  const idx = (sc, sit, st) => M.itemIdx[`${sc}|${sit}|${st}`];
+  const ex = M.scenarios[0], b = parts(idx(ex, "bad", "cheerful")), f = parts(idx(ex, "fine", "cheerful")), a = parts(idx(ex, "bad", "anxious"));
+  $("msgExample").innerHTML = `<span class="k">Example</span><span><b>${esc(scenName(ex))}</b>, four messages built from these sentences</span>` +
+    `<span class="k">Situation</span><span>${esc(b[0])} <span class="muted">or</span> ${esc(f[0])}</span>` +
+    `<span class="k">Stance</span><span>${esc(b[1])} <span class="muted">or</span> ${esc(a[1])}</span>` +
+    `<span class="k">Request</span><span>${esc(b[2])}</span>`;
+  const doms = [...new Set(M.items.map((it) => it.domain))];
+  if (S.msgDomain && !doms.includes(S.msgDomain)) S.msgDomain = "";
+  $("msgDomain").innerHTML = `<option value="">All topics</option>` + doms.map((d) => `<option value="${d}"${d === S.msgDomain ? " selected" : ""}>${esc(DOMAINS[d] || cap(d))}</option>`).join("");
+  const scs = M.scenarios.filter((sc) => !S.msgDomain || M.items[idx(sc, "bad", "cheerful")].domain === S.msgDomain);
+  $("msgCount").textContent = `${scs.length} scenarios, ${4 * scs.length} messages`;
+  $("msgBody").innerHTML = scs.map((sc) => {
+    const ib = idx(sc, "bad", "cheerful"), pb = parts(ib), pf = parts(idx(sc, "fine", "cheerful")), pa = parts(idx(sc, "bad", "anxious"));
+    const btn = (sit, st, l) => `<button type="button" data-i="${idx(sc, sit, st)}" title="Open this message in Explore">${l}</button>`;
+    return `<tr><td class="scen">${esc(scenName(sc))}<div class="muted" style="font-weight:400">${esc(DOMAINS[M.items[ib].domain] || "")}</div></td>` +
+      `<td><div class="pair"><span><span class="tag">Harmful</span>${esc(pb[0])}</span><span><span class="tag">Harmless</span>${esc(pf[0])}</span></div></td>` +
+      `<td><div class="pair"><span><span class="tag">Cheerful</span>${esc(pb[1])}</span><span><span class="tag">Anxious</span>${esc(pa[1])}</span></div></td>` +
+      `<td>${esc(pb[2])}</td>` +
+      `<td><div class="open">${btn("bad", "cheerful", "Harmful · cheerful")}${btn("bad", "anxious", "Harmful · anxious")}${btn("fine", "cheerful", "Harmless · cheerful")}${btn("fine", "anxious", "Harmless · anxious")}</div></td></tr>`;
+  }).join("");
+  $("msgBody").onclick = (e) => { const bt = e.target.closest("button[data-i]"); if (bt) openItem(+bt.dataset.i); };
+}
+
 /* ---------- explore ---------- */
 function curItem() { return M.items[S.item] || M.items[0]; }
 function setItemFromPicker(scen, sit, mood) {
@@ -801,6 +971,7 @@ function renderExplore(O, T) {
 
   renderDetail(O, T, i, S.tok);
   renderReplies(i);
+  renderBelow(O, T, i);
 }
 
 function wordList(A, seq, t, setv, labs) {
