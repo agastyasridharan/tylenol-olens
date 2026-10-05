@@ -822,8 +822,19 @@ function renderPerspective(P) {
 
 /* ---------- explore: whole-message panel ---------- */
 const jsons = new Map();
+// The artifact build stores the large per-message files (samples, region readouts, persp) as base64 gzip.
+const ZJSON = BIN_EXT === "b64.txt" ? /(\.samples|\.reg|\/persp)\.json$/ : null;
+async function fetchJSON(path) {
+  if (!ZJSON || !ZJSON.test(path)) { const r = await fetch(path); return r.ok ? r.json() : null; }
+  const r = await fetch(path.replace(/\.json$/, ".json.gz.b64.txt"));
+  if (!r.ok) return null;
+  const raw = atob((await r.text()).replace(/\s+/g, ""));
+  const buf = new Uint8Array(raw.length);
+  for (let j = 0; j < raw.length; j++) buf[j] = raw.charCodeAt(j);
+  return new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"))).json();
+}
 function getJSON(path) {
-  if (!jsons.has(path)) jsons.set(path, fetch(path).then((r) => (r.ok ? r.json() : null)).catch(() => null));
+  if (!jsons.has(path)) jsons.set(path, fetchJSON(path).catch(() => null));
   return jsons.get(path);
 }
 const FRAMES4 = [["chat", "Chat"], ["doc", "Plain text"], ["friend", "Two friends texting"], ["raw", "Human/Assistant transcript"]];
